@@ -38,29 +38,6 @@ st.markdown("""
         text-align: center;
         padding: 1rem 0;
     }
-    .source-card {
-        background-color: #f0f2f6;
-        border-radius: 8px;
-        padding: 12px;
-        margin: 8px 0;
-        border-left: 4px solid #1f77b4;
-    }
-    .source-card h4 {
-        margin: 0 0 4px 0;
-        color: #1f77b4;
-    }
-    .source-card p {
-        margin: 0;
-        font-size: 0.85em;
-        color: #555;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 12px;
-        padding: 16px;
-        color: white;
-        text-align: center;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,11 +118,11 @@ def run_rag_pipeline(
 ) -> tuple[GenerationResult, list[SearchResult]]:
     """
     Executa o pipeline RAG completo:
-    1. Busca híbrida (dense + BM25 + RRF)
+    1. Busca densa HNSW (ChromaDB)
     2. Reranking (cross-encoder)
     3. Geração (LLM)
     """
-    # 1. Busca híbrida — top-50 candidatos
+    # 1. Busca HNSW — top-50 candidatos
     with st.spinner("🔍 Buscando nos documentos normativos..."):
         candidates = engine.search_hybrid(
             query=query,
@@ -165,8 +142,51 @@ def run_rag_pipeline(
 
 # ── Renderização de Fontes ─────────────────────────────────────────────────────
 
+def _strip_markdown(text: str) -> str:
+    """Remove marcadores Markdown e HTML do texto para exibição limpa."""
+    import re
+    # Remove headers markdown (# ## ###)
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+    # Remove bold/itálico (**texto** ou *texto*)
+    text = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", text)
+    # Remove tags HTML
+    text = re.sub(r"<[^>]+>", "", text)
+    # Remove linhas horizontais markdown
+    text = re.sub(r"^-{3,}$", "", text, flags=re.MULTILINE)
+    # Remove espaços duplicados
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+@st.cache_data
+def _find_source_pdf(source_name: str) -> Path | None:
+    """
+    Busca o PDF original correspondente ao nome da fonte.
+
+    Percorre recursivamente regimentos_estatutos_resolucoes/ procurando
+    um PDF cujo nome contenha o source_name do chunk.
+    """
+    from src.config import DOCUMENTS_DIR
+    import unicodedata
+
+    def normalize(s: str) -> str:
+        """Normaliza string para comparação (remove acentos, lowercase)."""
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        return s.lower().replace(" ", "").replace("_", "").replace("-", "")
+
+    source_norm = normalize(source_name)
+
+    for pdf_path in DOCUMENTS_DIR.rglob("*.pdf"):
+        pdf_norm = normalize(pdf_path.stem)
+        if source_norm in pdf_norm or pdf_norm in source_norm:
+            return pdf_path
+
+    return None
+
+
 def render_sources(sources: list[SearchResult]):
-    """Renderiza os cartões de fontes consultadas."""
+    """Renderiza os cartões de fontes consultadas usando componentes nativos."""
     if not sources:
         return
 
@@ -179,17 +199,37 @@ def render_sources(sources: list[SearchResult]):
             hierarchy = meta.get("hierarchy", "")
             score = result.score
 
-            st.markdown(f"""
-<div class="source-card">
-    <h4>📄 {source} {f"— {article}" if article else ""}</h4>
-    <p><strong>Categoria:</strong> {category}</p>
-    {f'<p><strong>Hierarquia:</strong> {hierarchy}</p>' if hierarchy else ''}
-    <p><strong>Score de relevância:</strong> {score:.4f}</p>
-</div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"**📄 {source}** {f'— {article}' if article else ''}")
 
-            with st.popover(f"Ver trecho #{i}"):
-                st.text(result.content[:500] + ("..." if len(result.content) > 500 else ""))
+            cols = st.columns([2, 2, 1])
+            with cols[0]:
+                st.caption(f"Categoria: {category}")
+            with cols[1]:
+                if hierarchy:
+                    st.caption(f"Hierarquia: {hierarchy}")
+            with cols[2]:
+                st.caption(f"Score: {score:.4f}")
+
+            # Botões: ver trecho + baixar PDF
+            btn_cols = st.columns([1, 1, 3])
+            with btn_cols[0]:
+                with st.popover(f"Ver trecho #{i}"):
+                    clean_text = _strip_markdown(result.content[:600])
+                    st.text(clean_text + ("..." if len(result.content) > 600 else ""))
+
+            with btn_cols[1]:
+                pdf_path = _find_source_pdf(source)
+                if pdf_path and pdf_path.exists():
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Baixar PDF",
+                            data=f,
+                            file_name=pdf_path.name,
+                            mime="application/pdf",
+                            key=f"dl_{i}_{source}",
+                        )
+
+            st.divider()
 
 
 # ── Interface Principal ────────────────────────────────────────────────────────
@@ -219,9 +259,12 @@ def main():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-            # Mostra fontes para mensagens do assistente
-            if msg["role"] == "assistant" and "sources" in msg:
-                render_sources(msg["sources"])
+            # Mostra fontes e métricas para mensagens do assistente
+            if msg["role"] == "assistant":
+                if "sources" in msg:
+                    render_sources(msg["sources"])
+                if "metrics" in msg:
+                    st.caption(msg["metrics"])
 
     # Input do usuário
     user_input = st.chat_input(
@@ -250,19 +293,21 @@ def main():
                 # Exibe fontes
                 render_sources(top_results)
 
-                # Salva no histórico
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": result.answer,
-                    "sources": top_results,
-                })
-
                 # Métricas de uso
-                st.caption(
+                metrics_text = (
                     f"🔢 Tokens: {result.prompt_tokens} (prompt) + "
                     f"{result.completion_tokens} (resposta) | "
                     f"📄 {len(top_results)} fontes consultadas"
                 )
+                st.caption(metrics_text)
+
+                # Salva no histórico (incluindo métricas)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": result.answer,
+                    "sources": top_results,
+                    "metrics": metrics_text,
+                })
 
             except Exception as e:
                 st.error(f"Erro ao processar sua pergunta: {e}")
