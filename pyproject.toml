@@ -1,0 +1,40 @@
+[project]
+name = "rag-univasf"
+version = "0.1.0"
+description = "Sistema RAG para consulta de documentos normativos da UNIVASF"
+requires-python = ">=3.10"
+dependencies = [
+    # ETL
+    "pymupdf4llm>=0.0.17",
+    "pymupdf>=1.25.0",
+    # Chunking & NLP
+    "tiktoken>=0.8.0",
+    # Vector Store
+    "chromadb>=0.6.0",
+    # Embeddings & LLM
+    "openai>=1.60.0",
+    # Sparse Search
+    "rank-bm25>=0.2.2",
+    # Reranking
+    "sentence-transformers>=3.4.0",
+    # Evaluation
+    "ragas>=0.2.0",
+    "datasets>=3.0.0",
+    # UI
+    "streamlit>=1.41.0",
+    # Config
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.9.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

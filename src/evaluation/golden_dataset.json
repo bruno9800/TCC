@@ -1,0 +1,77 @@
+[
+    {
+        "question": "Quais são os critérios para trancamento de matrícula na UNIVASF?",
+        "ground_truth": "O trancamento de matrícula é regulamentado pela Resolução 08/2015 - Normas gerais de Graduação.",
+        "source": "Resolução 08/2015"
+    },
+    {
+        "question": "O que diz o estatuto da UNIVASF sobre a estrutura organizacional?",
+        "ground_truth": "O estatuto da UNIVASF define a estrutura organizacional da universidade.",
+        "source": "Estatuto UNIVASF"
+    },
+    {
+        "question": "Quais as normas para dispensa de componentes curriculares?",
+        "ground_truth": "A dispensa de componentes curriculares é regulamentada pela Resolução 03/2013.",
+        "source": "Resolução 03/2013"
+    },
+    {
+        "question": "Como funciona a colação de grau na UNIVASF?",
+        "ground_truth": "A colação de grau é regulamentada pela Resolução 18/2017, alterada pela Resolução 02/2019.",
+        "source": "Resolução 18/2017"
+    },
+    {
+        "question": "Quais são as normas sobre estágio na UNIVASF?",
+        "ground_truth": "O estágio é regulamentado pela Resolução 09/2022.",
+        "source": "Resolução 09/2022"
+    },
+    {
+        "question": "O que são atividades complementares (ACC) na UNIVASF?",
+        "ground_truth": "As atividades complementares são regulamentadas pela Resolução 02/2018, alterada pela Resolução 01/2019.",
+        "source": "Resolução 02/2018"
+    },
+    {
+        "question": "Quais são os critérios para desligamento de discente?",
+        "ground_truth": "O desligamento de discente é regulamentado pela Resolução 07/2019.",
+        "source": "Resolução 07/2019"
+    },
+    {
+        "question": "Como funciona a mobilidade acadêmica na UNIVASF?",
+        "ground_truth": "A mobilidade acadêmica é regulamentada pela Resolução 13/2017.",
+        "source": "Resolução 13/2017"
+    },
+    {
+        "question": "Quais são as normas disciplinares para alunos da UNIVASF?",
+        "ground_truth": "As normas disciplinares são regulamentadas pela Resolução 06/2015.",
+        "source": "Resolução 06/2015"
+    },
+    {
+        "question": "Como funciona o processo de preenchimento de vagas ociosas?",
+        "ground_truth": "O preenchimento de vagas ociosas é regulamentado pela Resolução 11/2013.",
+        "source": "Resolução 11/2013"
+    },
+    {
+        "question": "Quais são as regras para vista e revisão de prova na UNIVASF?",
+        "ground_truth": "A vista e revisão de prova são regulamentadas pela Resolução 02/2022.",
+        "source": "Resolução 02/2022"
+    },
+    {
+        "question": "O que é o NDE e como ele funciona na UNIVASF?",
+        "ground_truth": "O NDE (Núcleo Docente Estruturante) é regulamentado pela Resolução 14/2021.",
+        "source": "Resolução 14/2021"
+    },
+    {
+        "question": "Como funciona a revalidação de diploma na UNIVASF?",
+        "ground_truth": "A revalidação de diploma é regulamentada pela Resolução 08/2017, alterada pela Resolução 03/2018.",
+        "source": "Resolução 08/2017"
+    },
+    {
+        "question": "Quais são as finalidades da UNIVASF segundo o estatuto?",
+        "ground_truth": "O estatuto da UNIVASF define as finalidades da universidade.",
+        "source": "Estatuto UNIVASF"
+    },
+    {
+        "question": "Como funciona a curricularização da extensão na UNIVASF?",
+        "ground_truth": "A curricularização da extensão é regulamentada pela Resolução 03/2022.",
+        "source": "Resolução 03/2022"
+    }
+]
