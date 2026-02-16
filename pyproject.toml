@@ -10,7 +10,7 @@ dependencies = [
     # Chunking & NLP
     "tiktoken>=0.8.0",
     # Vector Store
-    "chromadb>=0.6.0",
+    "chromadb==0.6.3",
     # Embeddings & LLM
     "openai>=1.60.0",
     # Sparse Search

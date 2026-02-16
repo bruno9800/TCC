@@ -16,6 +16,8 @@ from openai import OpenAI
 
 from src.config import (
     COLLECTION_NAME,
+    CHROMA_HOST,
+    CHROMA_PORT,
     EMBEDDING_MODEL,
     OPENAI_API_KEY,
     VECTORSTORE_DIR,
@@ -93,13 +95,16 @@ def generate_embeddings(texts: list[str], model: str = EMBEDDING_MODEL) -> list[
 # ── ChromaDB ───────────────────────────────────────────────────────────────────
 
 
-def get_chroma_client() -> chromadb.PersistentClient:
-    """Retorna um cliente ChromaDB com persistência em disco."""
+def get_chroma_client() -> chromadb.ClientAPI:
+    """Retorna um cliente ChromaDB — HTTP (Docker) ou local (PersistentClient)."""
+    if CHROMA_HOST:
+        logger.info(f"Conectando ao ChromaDB via HTTP: {CHROMA_HOST}:{CHROMA_PORT}")
+        return chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
     return chromadb.PersistentClient(path=str(VECTORSTORE_DIR))
 
 
 def get_or_create_collection(
-    client: chromadb.PersistentClient | None = None,
+    client: chromadb.ClientAPI | None = None,
     name: str = COLLECTION_NAME,
 ) -> chromadb.Collection:
     """Obtém ou cria a collection ChromaDB para os chunks."""

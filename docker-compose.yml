@@ -1,0 +1,47 @@
+services:
+  # ── API Backend (FastAPI) ──────────────────────────────────────────────────
+  api:
+    build: .
+    container_name: univasf-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    volumes:
+      - chunk_data:/app/data
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # ── ChromaDB (Banco Vetorial) ──────────────────────────────────────────────
+  chromadb:
+    image: chromadb/chroma:0.6.3
+    container_name: univasf-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+volumes:
+  chroma_data:
+    driver: local
+  chunk_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

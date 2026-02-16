@@ -1,10 +1,13 @@
 """
 Interface Streamlit — Chat RAG para Documentos Normativos da UNIVASF
 
+Consome a API FastAPI (POST /chat/) em vez de chamar o pipeline diretamente.
+
 Uso:
     streamlit run src/app.py
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -12,14 +15,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
+import httpx
 import logging
-
-from src.retrieval.hybrid_search import HybridSearchEngine, SearchResult
-from src.retrieval.reranker import rerank
-from src.generation.generator import generate_answer, GenerationResult
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ── Configuração ───────────────────────────────────────────────────────────────
+
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # ── Configuração da Página ─────────────────────────────────────────────────────
 
@@ -43,18 +47,6 @@ st.markdown("""
 
 
 # ── Inicialização do Estado ────────────────────────────────────────────────────
-
-@st.cache_resource
-def load_search_engine():
-    """Carrega o motor de busca uma única vez."""
-    try:
-        engine = HybridSearchEngine()
-        return engine
-    except Exception as e:
-        st.error(f"Erro ao carregar motor de busca: {e}")
-        st.info("Execute o pipeline ETL primeiro:\n```\npython scripts/run_etl.py\npython scripts/run_indexing.py\n```")
-        return None
-
 
 def initialize_session():
     """Inicializa variáveis de sessão."""
@@ -87,15 +79,17 @@ def render_sidebar():
 
         st.markdown("---")
 
+        # Status da API
         st.markdown("## 📊 Informações")
-        engine = load_search_engine()
-        if engine:
-            st.metric("Chunks Indexados", len(engine.chunks))
-
-            categories = set()
-            for chunk in engine.chunks:
-                categories.add(chunk.metadata.category)
-            st.markdown(f"**Categorias:** {', '.join(sorted(categories))}")
+        try:
+            r = httpx.get(f"{API_BASE_URL}/health", timeout=5.0)
+            if r.status_code == 200:
+                st.success("🟢 API Online")
+            else:
+                st.error("🔴 API Offline")
+        except httpx.ConnectError:
+            st.error("🔴 API Offline")
+            st.caption(f"URL: {API_BASE_URL}")
 
         st.markdown("---")
         st.markdown(
@@ -108,36 +102,56 @@ def render_sidebar():
         return filter_revoked, top_k
 
 
-# ── Pipeline de Resposta ───────────────────────────────────────────────────────
+# ── Chamada à API ──────────────────────────────────────────────────────────────
 
-def run_rag_pipeline(
-    query: str,
-    engine: HybridSearchEngine,
-    filter_revoked: bool = True,
+def call_chat_api(
+    message: str,
+    history: list[dict],
     top_k: int = 5,
-) -> tuple[GenerationResult, list[SearchResult]]:
+    filter_revoked: bool = True,
+) -> dict | None:
     """
-    Executa o pipeline RAG completo:
-    1. Busca densa HNSW (ChromaDB)
-    2. Reranking (cross-encoder)
-    3. Geração (LLM)
+    Chama o endpoint POST /chat/ da API FastAPI.
+
+    Args:
+        message: Pergunta do usuário.
+        history: Histórico de mensagens [{role, content}, ...].
+        top_k: Documentos finais.
+        filter_revoked: Filtrar revogados.
+
+    Returns:
+        Dicionário com a resposta da API ou None em caso de erro.
     """
-    # 1. Busca HNSW — top-50 candidatos
-    with st.spinner("🔍 Buscando nos documentos normativos..."):
-        candidates = engine.search_hybrid(
-            query=query,
-            filter_revoked=filter_revoked,
+    # Converte histórico para o formato da API (apenas role e content)
+    api_history = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in history
+    ]
+
+    payload = {
+        "message": message,
+        "history": api_history,
+        "top_k": top_k,
+        "filter_revoked": filter_revoked,
+    }
+
+    try:
+        response = httpx.post(
+            f"{API_BASE_URL}/chat/",
+            json=payload,
+            timeout=120.0,  # Reranker pode demorar no primeiro carregamento
         )
-
-    # 2. Reranking — top-5
-    with st.spinner("📊 Reordenando por relevância..."):
-        top_results = rerank(query, candidates, top_k=top_k)
-
-    # 3. Geração
-    with st.spinner("💬 Gerando resposta fundamentada..."):
-        result = generate_answer(query, top_results)
-
-    return result, top_results
+        response.raise_for_status()
+        return response.json()
+    except httpx.ConnectError:
+        st.error("❌ Não foi possível conectar à API. Verifique se está rodando.")
+        return None
+    except httpx.HTTPStatusError as e:
+        st.error(f"❌ Erro da API: {e.response.status_code} — {e.response.text}")
+        return None
+    except httpx.ReadTimeout:
+        st.error("⏳ A API demorou demais para responder. Tente novamente.")
+        return None
 
 
 # ── Renderização de Fontes ─────────────────────────────────────────────────────
@@ -145,15 +159,10 @@ def run_rag_pipeline(
 def _strip_markdown(text: str) -> str:
     """Remove marcadores Markdown e HTML do texto para exibição limpa."""
     import re
-    # Remove headers markdown (# ## ###)
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
-    # Remove bold/itálico (**texto** ou *texto*)
     text = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", text)
-    # Remove tags HTML
     text = re.sub(r"<[^>]+>", "", text)
-    # Remove linhas horizontais markdown
     text = re.sub(r"^-{3,}$", "", text, flags=re.MULTILINE)
-    # Remove espaços duplicados
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
@@ -162,42 +171,36 @@ def _strip_markdown(text: str) -> str:
 def _find_source_pdf(source_name: str) -> Path | None:
     """
     Busca o PDF original correspondente ao nome da fonte.
-
-    Percorre recursivamente regimentos_estatutos_resolucoes/ procurando
-    um PDF cujo nome contenha o source_name do chunk.
     """
     from src.config import DOCUMENTS_DIR
     import unicodedata
 
     def normalize(s: str) -> str:
-        """Normaliza string para comparação (remove acentos, lowercase)."""
         s = unicodedata.normalize("NFKD", s)
         s = "".join(c for c in s if not unicodedata.combining(c))
         return s.lower().replace(" ", "").replace("_", "").replace("-", "")
 
     source_norm = normalize(source_name)
-
     for pdf_path in DOCUMENTS_DIR.rglob("*.pdf"):
         pdf_norm = normalize(pdf_path.stem)
         if source_norm in pdf_norm or pdf_norm in source_norm:
             return pdf_path
-
     return None
 
 
-def render_sources(sources: list[SearchResult]):
+def render_sources(sources: list[dict]):
     """Renderiza os cartões de fontes consultadas usando componentes nativos."""
     if not sources:
         return
 
     with st.expander("📎 Fontes Consultadas", expanded=False):
-        for i, result in enumerate(sources, 1):
-            meta = result.metadata
-            source = meta.get("source", "Desconhecido")
-            article = meta.get("article_id", "")
-            category = meta.get("category", "")
-            hierarchy = meta.get("hierarchy", "")
-            score = result.score
+        for i, src in enumerate(sources, 1):
+            source = src.get("source", "Desconhecido")
+            article = src.get("article_id", "")
+            category = src.get("category", "")
+            hierarchy = src.get("hierarchy", "")
+            score = src.get("score", 0.0)
+            snippet = src.get("snippet", "")
 
             st.markdown(f"**📄 {source}** {f'— {article}' if article else ''}")
 
@@ -213,9 +216,10 @@ def render_sources(sources: list[SearchResult]):
             # Botões: ver trecho + baixar PDF
             btn_cols = st.columns([1, 1, 3])
             with btn_cols[0]:
-                with st.popover(f"Ver trecho #{i}"):
-                    clean_text = _strip_markdown(result.content[:600])
-                    st.text(clean_text + ("..." if len(result.content) > 600 else ""))
+                if snippet:
+                    with st.popover(f"Ver trecho #{i}"):
+                        clean_text = _strip_markdown(snippet)
+                        st.text(clean_text)
 
             with btn_cols[1]:
                 pdf_path = _find_source_pdf(source)
@@ -249,11 +253,6 @@ def main():
     # Sidebar
     filter_revoked, top_k = render_sidebar()
 
-    # Carrega motor de busca
-    engine = load_search_engine()
-    if engine is None:
-        st.stop()
-
     # Histórico de chat
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -277,41 +276,48 @@ def main():
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Executa pipeline RAG
+        # Chama a API
         with st.chat_message("assistant"):
-            try:
-                result, top_results = run_rag_pipeline(
-                    query=user_input,
-                    engine=engine,
-                    filter_revoked=filter_revoked,
+            with st.spinner("🤖 Consultando o assistente..."):
+                result = call_chat_api(
+                    message=user_input,
+                    history=st.session_state.messages[:-1],  # Exclui a msg atual
                     top_k=top_k,
+                    filter_revoked=filter_revoked,
                 )
 
-                # Exibe resposta
-                st.markdown(result.answer)
+            if result:
+                answer = result.get("answer", "Sem resposta.")
+                sources = result.get("sources", [])
+                tokens = result.get("tokens", {})
+                used_search = result.get("used_search", False)
 
-                # Exibe fontes
-                render_sources(top_results)
+                # Exibe resposta
+                st.markdown(answer)
+
+                # Exibe fontes (se buscou)
+                if sources:
+                    render_sources(sources)
 
                 # Métricas de uso
+                prompt_tokens = tokens.get("prompt", 0)
+                completion_tokens = tokens.get("completion", 0)
+                search_label = "🔍 Buscou" if used_search else "💬 Direto"
                 metrics_text = (
-                    f"🔢 Tokens: {result.prompt_tokens} (prompt) + "
-                    f"{result.completion_tokens} (resposta) | "
-                    f"📄 {len(top_results)} fontes consultadas"
+                    f"🔢 Tokens: {prompt_tokens} (prompt) + "
+                    f"{completion_tokens} (resposta) | "
+                    f"{search_label} | "
+                    f"📄 {len(sources)} fontes"
                 )
                 st.caption(metrics_text)
 
-                # Salva no histórico (incluindo métricas)
+                # Salva no histórico
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": result.answer,
-                    "sources": top_results,
+                    "content": answer,
+                    "sources": sources,
                     "metrics": metrics_text,
                 })
-
-            except Exception as e:
-                st.error(f"Erro ao processar sua pergunta: {e}")
-                logger.error(f"Erro no pipeline: {e}", exc_info=True)
 
 
 if __name__ == "__main__":

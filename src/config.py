@@ -38,3 +38,5 @@ OVERLAP_TOKENS = 50       # overlap para chunks divididos
 
 # ── ChromaDB ──────────────────────────────────────────────────────────────────
 COLLECTION_NAME = "univasf_normas"
+CHROMA_HOST = os.getenv("CHROMA_HOST", "")       # Se vazio, usa PersistentClient local
+CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8001"))
