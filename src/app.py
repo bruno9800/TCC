@@ -135,10 +135,18 @@ def call_chat_api(
         "filter_revoked": filter_revoked,
     }
 
+    # Recupera a API Key do ambiente ou segura (hardcoded para teste se necessário)
+    api_key = os.getenv("TCC_API_KEY", "")
+
+    headers = {}
+    if api_key:
+        headers["x-api-key"] = api_key
+
     try:
         response = httpx.post(
             f"{API_BASE_URL}/chat/",
             json=payload,
+            headers=headers,
             timeout=120.0,  # Reranker pode demorar no primeiro carregamento
         )
         response.raise_for_status()

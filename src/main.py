@@ -5,10 +5,11 @@ Uso:
     uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.chat.router import router as chat_router
+from src.auth import get_api_key
 
 app = FastAPI(
     title="UNIVASF RAG API",
@@ -26,7 +27,9 @@ app.add_middleware(
 )
 
 # ── Rotas ──────────────────────────────────────────────────────────────────────
-app.include_router(chat_router, prefix="/chat", tags=["Chat"])
+# Protege a rota de chat com a API Key
+app.include_router(chat_router, prefix="/chat", tags=["Chat"], dependencies=[Depends(get_api_key)])
+
 
 
 @app.get("/health", tags=["Infra"])

@@ -20,6 +20,9 @@ VECTORSTORE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── API Keys ───────────────────────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+TCC_API_KEY = os.getenv("TCC_API_KEY", "")
+
+
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")

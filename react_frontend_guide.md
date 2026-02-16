@@ -157,6 +157,8 @@ interface DisplayMessage extends ChatMessage {
 // services/api.ts
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_KEY = import.meta.env.VITE_API_KEY || "";
+
 
 export async function checkHealth(): Promise<boolean> {
   try {
@@ -170,7 +172,11 @@ export async function checkHealth(): Promise<boolean> {
 export async function sendMessage(request: ChatRequest): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chat/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": API_KEY,
+    },
+
     body: JSON.stringify(request),
   });
 
@@ -266,7 +272,10 @@ export function useChat() {
 
 ```env
 # .env (React / Vite)
+# .env (React / Vite)
 VITE_API_URL=http://localhost:8000
+VITE_API_KEY=sua-senha-secreta
+
 ```
 
 ---
