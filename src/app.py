@@ -188,7 +188,7 @@ def _find_source_pdf(source_name: str) -> Path | None:
     return None
 
 
-def render_sources(sources: list[dict]):
+def render_sources(sources: list[dict], message_index: int):
     """Renderiza os cartões de fontes consultadas usando componentes nativos."""
     if not sources:
         return
@@ -230,7 +230,7 @@ def render_sources(sources: list[dict]):
                             data=f,
                             file_name=pdf_path.name,
                             mime="application/pdf",
-                            key=f"dl_{i}_{source}",
+                            key=f"dl_{message_index}_{i}_{source}",
                         )
 
             st.divider()
@@ -254,14 +254,14 @@ def main():
     filter_revoked, top_k = render_sidebar()
 
     # Histórico de chat
-    for msg in st.session_state.messages:
+    for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
             # Mostra fontes e métricas para mensagens do assistente
             if msg["role"] == "assistant":
                 if "sources" in msg:
-                    render_sources(msg["sources"])
+                    render_sources(msg["sources"], message_index=i)
                 if "metrics" in msg:
                     st.caption(msg["metrics"])
 
@@ -297,7 +297,7 @@ def main():
 
                 # Exibe fontes (se buscou)
                 if sources:
-                    render_sources(sources)
+                    render_sources(sources, message_index=len(st.session_state.messages))
 
                 # Métricas de uso
                 prompt_tokens = tokens.get("prompt", 0)

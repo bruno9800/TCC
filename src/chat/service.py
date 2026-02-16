@@ -66,8 +66,11 @@ acadêmicos, você DEVE buscar nos documentos.
 ## Como decidir se precisa buscar:
 - BUSCAR: perguntas sobre normas, regras, trancamento, matrícula, estágio, regulamentos, \
 prazos, direitos, resoluções, artigos, etc.
-- NÃO BUSCAR: cumprimentos (oi, bom dia), agradecimentos, perguntas sobre você mesmo, \
-esclarecimentos sobre algo que você já respondeu na conversa.
+- NÃO BUSCAR: 
+    - cumprimentos (oi, bom dia), agradecimentos.
+    - perguntas sobre você mesmo.
+    - perguntas sobre o histórico da conversa (ex: "o que eu perguntei antes?", "resuma o que falamos").
+    - esclarecimentos sobre algo que você já respondeu.
 
 ## Formato de decisão:
 Quando receber uma mensagem, responda APENAS com um JSON:
