@@ -37,6 +37,11 @@ class SourceInfo(BaseModel):
     hierarchy: str = ""
     score: float = 0.0
     snippet: str = ""
+    download_url: str = Field(
+        default="",
+        description="URL relativa para download do PDF original. "
+                    "Use GET {base_url}{download_url} para baixar o arquivo.",
+    )
 
 
 class TokenUsage(BaseModel):

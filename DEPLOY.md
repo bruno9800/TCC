@@ -1,107 +1,109 @@
-# 🚀 Guia de Deploy em VPS (Ubuntu)
+# Guia de Deploy
 
-Este guia descreve como configurar e rodar o projeto em uma VPS usando Docker.
+## Opção A — VPS (Ubuntu + Docker)
 
-## 1. Pré-requisitos na VPS
-Acesse sua VPS via SSH e instale o Docker e Docker Compose:
+### 1. Pré-requisitos na VPS
 
 ```bash
-# Atualizar sistema
 sudo apt update && sudo apt upgrade -y
-
-# Instalar Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
-
-# Dar permissão ao usuário atual (evita usar sudo sempre)
-sudo usermod -aG docker $USER
-newgrp docker
-
-# Verificar instalação
-docker --version
-docker compose version
+sudo usermod -aG docker $USER && newgrp docker
 ```
 
-## 2. Configuração Inicial do Projeto
+### 2. Configuração Inicial
 
-1. **Clone o repositório**:
-   ```bash
-   git clone https://github.com/bruno9800/TCC.git
-   cd TCC
-   ```
+```bash
+git clone https://github.com/bruno9800/TCC.git
+cd TCC
+cp .env.example .env
+nano .env   # Preencher OPENAI_API_KEY e TCC_API_KEY
+```
 
-2. **Crie o arquivo `.env`**:
-   Copie o exemplo e edite com sua chave da OpenAI.
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-   > **Importante**: Mantenha `CHROMA_HOST=chromadb` e `CHROMA_PORT=8000` para deploy.
+> Manter `CHROMA_HOST=chromadb` e `CHROMA_PORT=8000` para o ambiente Docker.
 
-## 3. Rodando o Projeto
+### 3. Subir os Serviços
 
-### Iniciar os Serviços
 ```bash
 docker compose up -d --build
 ```
 
-### Indexar Documentos (Primeira vez apenas)
-Seus documentos PDF devem estar na pasta `regimentos_estatutos_resolucoes/` antes de rodar este passo.
-A indexação persiste no volume `chroma_data`, então você só precisa rodar uma vez ou quando adicionar novos arquivos.
+### 4. Indexar Documentos (primeira vez)
+
+Os PDFs devem estar em `regimentos_estatutos_resolucoes/` antes deste passo.
+O índice persiste no volume `chroma_data` — rodar apenas uma vez ou ao adicionar novos arquivos.
 
 ```bash
 docker compose run --rm api python scripts/run_indexing.py
 ```
 
-## 4. Atualizando o Projeto (Deploy Contínuo)
-Para baixar a versão mais recente do código e atualizar os containers:
+### 5. Atualizar (Deploy Contínuo)
 
 ```bash
-git pull                   # Baixa alterações do GitHub
-docker compose up -d --build --remove-orphans # Reconstrói e reinicia
+./deploy.sh
 ```
 
-## 5. Rodando o Frontend (Streamlit)
-O Streamlit também pode rodar via Docker. Se ainda não tiver um serviço definido para ele, adicione ao `docker-compose.yml` ou use o script de automação abaixo.
+O script `deploy.sh` faz `git pull` + rebuild dos containers + limpeza de imagens antigas.
 
 ---
 
-# 🤖 Automação de Deploy
+## Opção B — Cloudflare Tunnel (acesso público sem abrir portas)
 
-Crie um script chamado `deploy.sh` na raiz do projeto para facilitar atualizações futuras:
+Usar quando precisar expor a API com URL pública fixa (ex: para a banca ou testes remotos).
 
-1. Crie o arquivo:
-   ```bash
-   nano deploy.sh
-   ```
+### 1. Obter o Token
 
-2. Cole o conteúdo:
-   ```bash
-   #!/bin/bash
-   
-   echo "🚀 Iniciando Deploy..."
-   
-   # 1. Puxar código atualizado
-   echo "📥 Baixando atualizações do Git..."
-   git pull
-   
-   # 2. Subir containers (Build se necessário)
-   echo "🐳 Construindo e subindo containers..."
-   docker compose up -d --build --remove-orphans
-   
-   # 3. Limpar imagens antigas (opcional, economiza espaço)
-   echo "🧹 Limpando imagens não utilizadas..."
-   docker image prune -f
-   
-   echo "✅ Deploy concluído com sucesso!"
-   ```
+1. Acesse o [Zero Trust Dashboard](https://one.dash.cloudflare.com/).
+2. Vá em **Networks > Tunnels > Create a Tunnel**.
+3. Escolha **Cloudflared**, dê um nome (ex: `tcc-api`).
+4. Copie o **Token** exibido (string longa começando com `ey...`).
 
-3. Dê permissão de execução:
-   ```bash
-   chmod +x deploy.sh
-   ```
+### 2. Configurar
 
-4. Para atualizar o projeto no futuro, basta rodar:
-   ```bash
-   ./deploy.sh
-   ```
+No `.env`, adicione:
+
+```bash
+TUNNEL_TOKEN=eyJhIjoi...
+```
+
+### 3. Configurar Rota Pública no Cloudflare
+
+Na aba **Public Hostname** do tunnel:
+- **Subdomain**: `api` (ex: `api.seu-dominio.com`)
+- **Domain**: seu domínio
+- **Service**: `HTTP` → `univasf-api:8000` (nome do container Docker)
+
+### 4. Rodar
+
+```bash
+docker compose up -d
+```
+
+O container `univasf-tunnel` conecta automaticamente e a API fica acessível no domínio configurado.
+
+---
+
+## Desenvolvimento Local (sem Docker)
+
+```bash
+# Instalar dependências
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+
+# Configurar variáveis de ambiente
+cp .env.example .env
+# Editar .env: OPENAI_API_KEY, TCC_API_KEY, CHROMA_HOST=localhost
+
+# Rodar ETL (PDF → chunks)
+python scripts/run_etl.py
+
+# Indexar no ChromaDB
+python scripts/run_indexing.py
+
+# Subir API
+uvicorn src.main:app --port 8000 --reload
+
+# (Opcional) Avaliar com RAGAS
+python scripts/run_eval.py
+```

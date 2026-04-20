@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import urllib.parse
 
 from openai import OpenAI
 
@@ -262,6 +263,7 @@ def run_chat(
                     hierarchy=result.metadata.get("hierarchy", ""),
                     score=result.score,
                     snippet=result.content[:300],
+                    download_url=f"/documents/download?source={urllib.parse.quote(source_name)}",
                 )
             )
 
