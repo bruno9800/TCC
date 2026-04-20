@@ -93,6 +93,45 @@ Cada item de `sources` inclui o campo `download_url` pronto para uso:
 
 ---
 
+## GET /documents/search
+
+Busca semântica sobre os documentos normativos. Projetado para uso em campo de busca com debounce — sem HyDE, latência mínima (~200–400ms).
+
+**Query params:**
+
+| Param | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `q` | string (min 2 chars) | obrigatório | Termo ou frase de busca |
+| `limit` | int (1–48) | `10` | Máximo de documentos retornados |
+| `filter_revoked` | bool | `true` | Filtrar documentos revogados |
+
+**Response** — documentos ordenados por relevância semântica:
+
+```json
+[
+  {
+    "source": "Resolução 08_2015 - Normas_gerais_Graduação",
+    "filename": "Resolução 08_2015 - Normas_gerais_Graduação.pdf",
+    "category": "Resolução PROEN",
+    "score": 0.8741,
+    "snippet": "Art. 45. O trancamento de matrícula poderá ser requerido...",
+    "article_id": "Art. 45",
+    "download_url": "/documents/download?source=Resolu%C3%A7%C3%A3o+08_2015..."
+  }
+]
+```
+
+**Padrão de uso no frontend** (campo de busca com debounce):
+
+```typescript
+// Chama a cada 300ms após o usuário parar de digitar
+const results = q.length >= 2
+  ? await fetch(`${API_BASE}/documents/search?q=${encodeURIComponent(q)}`, { headers })
+  : await fetch(`${API_BASE}/documents/list`, { headers }); // fallback: lista completa
+```
+
+---
+
 ## GET /documents/download
 
 Retorna o PDF original do documento citado na resposta do chat.
