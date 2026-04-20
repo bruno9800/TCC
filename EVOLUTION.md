@@ -136,6 +136,29 @@
 
 ---
 
+### D9 — Módulo de Professores: Curadoria Manual (em vez de upload público)
+
+**Decisão:** Cadastro de professores e cronogramas via endpoint protegido por API key (curadoria pelo próprio desenvolvedor), com leitura pública via `GET /professors`. Dados entram como JSON estruturado direto no ChromaDB em uma coleção separada (`type: schedule`), sem pipeline ETL de PDF.
+
+**Alternativas rejeitadas:**
+
+- *Upload público de PDF:* qualquer pessoa enviaria PDFs que seriam processados e indexados automaticamente. Risco alto de poluição do ChromaDB com dados incorretos — numa demonstração na banca, o agente poderia citar informação errada com confiança, o que é pior que não ter o dado.
+- *Submissão pública + moderação:* mais robusto, mas adiciona complexidade de fila de aprovação sem auth — over-engineering para o escopo do TCC.
+
+**Justificativa:** A contribuição técnica central do TCC já está no pipeline de normas. O módulo de professores serve para demonstrar que o agente opera sobre múltiplas coleções (normas + cronogramas) e escolhe a ferramenta certa conforme a intenção da pergunta. Para essa demonstração, 5–10 professores cadastrados manualmente são suficientes. Dado estruturado (campos explícitos: nome, disciplina, horários, datas de prova) também produz retrieval mais preciso que texto livre extraído de PDF.
+
+**Como fica a arquitetura:**
+- `POST /professors` (protegido) — cadastra/atualiza professor, indexa no ChromaDB com `type: schedule`
+- `GET /professors` (público) — lista professores cadastrados
+- Agente ganha `ScheduleTool` que busca na coleção de cronogramas
+- `LegalTool` permanece inalterada para normas
+
+**Why:** Sem auth no sistema, a única forma segura de garantir qualidade dos dados é controle manual. Para a fase de validação do TCC isso é suficiente e elimina risco de demonstração com dados ruins.
+
+**How to apply:** Ao implementar, manter os dois endpoints separados no roteamento e usar metadado `type` no ChromaDB para isolar as buscas por coleção.
+
+---
+
 ### D8 — CloudFlare Tunnel (em vez de expor porta direta)
 
 **Decisão:** Usar Cloudflare Tunnel para expor a API sem abrir portas públicas na VPS.
@@ -160,7 +183,7 @@
 | Frontend React | ✅ Pronto | Consome API FastAPI |
 | Avaliação RAGAS | ✅ Pronto | 15 perguntas golden dataset |
 | Auth JWT + email @univasf | ❌ Fora do escopo MVP | Decisão D6 |
-| Upload cronograma de professor | ❌ Fora do escopo MVP | Feature futura |
+| Módulo de professores (curadoria) | 🔜 Planejado | Decisão D9 |
 
 ---
 
@@ -168,10 +191,11 @@
 
 > Atualize esta seção conforme o projeto avança.
 
+- [ ] Implementar módulo de professores (Decisão D9): `POST /professors`, `GET /professors`, `ScheduleTool` no agente
 - [ ] Rodar avaliação RAGAS completa e registrar métricas finais aqui
 - [ ] Comparar baseline (sem reranker) vs sistema completo nas métricas RAGAS
 - [ ] Documentar exemplos reais de perguntas e respostas para o TCC
-- [ ] Registrar custo de tokens médio por consulta
+- [ ] Registrar custo de tokens médio por consulta (disponível via `GET /logs/stats`)
 
 ---
 

@@ -162,6 +162,79 @@ GET /documents/list
 
 ---
 
+---
+
+## GET /logs/queries
+
+Retorna as últimas N interações registradas, mais recentes primeiro.
+
+**Query params:**
+
+| Param | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `limit` | int (1–1000) | `50` | Número de entradas a retornar |
+| `only_search` | bool | `false` | Se `true`, retorna apenas queries que acionaram o pipeline RAG |
+
+**Response:**
+
+```json
+[
+  {
+    "timestamp": "2026-04-20T14:32:01.123Z",
+    "question": "Quais os critérios para trancamento de matrícula?",
+    "search_query": "critérios trancamento matrícula UNIVASF",
+    "used_search": true,
+    "sources": [
+      { "source": "Resolução 08_2015 - Normas_gerais", "score": 0.91, "article_id": "Art. 45" }
+    ],
+    "top_k": 5,
+    "filter_revoked": true,
+    "tokens_prompt": 2048,
+    "tokens_completion": 116,
+    "model": "gpt-4o"
+  }
+]
+```
+
+> Quando `used_search: false` (cumprimento, follow-up), `search_query` e `sources` ficam `null`/`[]`.
+
+---
+
+## GET /logs/stats
+
+Retorna métricas agregadas de todas as interações — útil para análise do TCC.
+
+```bash
+GET /logs/stats
+```
+
+**Response:**
+
+```json
+{
+  "total_queries": 142,
+  "search_triggered": 128,
+  "search_rate": 0.901,
+  "total_tokens_prompt": 289536,
+  "total_tokens_completion": 16448,
+  "top_10_sources": [
+    { "source": "Resolução 08_2015 - Normas_gerais_Graduação", "count": 34 },
+    { "source": "estatuto-univasf", "count": 21 }
+  ]
+}
+```
+
+| Campo | Descrição |
+|-------|-----------|
+| `total_queries` | Total de interações registradas |
+| `search_triggered` | Quantas acionaram o pipeline RAG |
+| `search_rate` | Taxa de uso do RAG (0–1) |
+| `total_tokens_prompt` | Total de tokens de entrada consumidos |
+| `total_tokens_completion` | Total de tokens de saída consumidos |
+| `top_10_sources` | Documentos mais citados nas respostas |
+
+---
+
 ## Exemplos com curl
 
 ```bash
@@ -194,6 +267,14 @@ curl -OJ \
 
 # Listar todos os documentos disponíveis
 curl http://localhost:8000/documents/list \
+  -H "x-api-key: sua-chave-aqui"
+
+# Últimas 100 queries que acionaram busca
+curl "http://localhost:8000/logs/queries?limit=100&only_search=true" \
+  -H "x-api-key: sua-chave-aqui"
+
+# Estatísticas agregadas
+curl http://localhost:8000/logs/stats \
   -H "x-api-key: sua-chave-aqui"
 ```
 

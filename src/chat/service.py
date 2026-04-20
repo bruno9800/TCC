@@ -26,6 +26,9 @@ from src.chat.schemas import (
     SourceInfo,
     TokenUsage,
 )
+from src.logs.query_logger import log_query
+from src.retrieval.hyde import generate_hypothetical_document
+from src.indexing.vector_store import generate_embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +188,17 @@ def run_chat(
     # ── Passo 2A: Resposta direta (sem busca) ──────────────────────────────
     if not needs_search and direct_response:
         logger.info("Agente respondeu diretamente (sem busca).")
+        log_query(
+            question=message,
+            search_query="",
+            used_search=False,
+            sources=[],
+            top_k=top_k,
+            filter_revoked=filter_revoked,
+            tokens_prompt=total_prompt_tokens,
+            tokens_completion=total_completion_tokens,
+            model=model,
+        )
         return ChatResponse(
             answer=direct_response,
             sources=[],
@@ -198,10 +212,16 @@ def run_chat(
 
     engine = get_search_engine()
 
-    # Busca HNSW
+    # HyDE — gera documento hipotético e computa seu embedding para o dense search
+    hypothetical_doc = generate_hypothetical_document(search_query)
+    hyde_embedding = generate_embeddings([hypothetical_doc])[0]
+    logger.info("HyDE: embedding do documento hipotético gerado.")
+
+    # Busca híbrida: dense com embedding HyDE + BM25 com query original
     candidates = engine.search_hybrid(
         query=search_query,
         filter_revoked=filter_revoked,
+        hyde_embedding=hyde_embedding,
     )
 
     # Reranking
@@ -266,6 +286,21 @@ def run_chat(
                     download_url=f"/documents/download?source={urllib.parse.quote(source_name)}",
                 )
             )
+
+    log_query(
+        question=message,
+        search_query=search_query,
+        used_search=True,
+        sources=[
+            {"source": s.source, "score": s.score, "article_id": s.article_id}
+            for s in sources
+        ],
+        top_k=top_k,
+        filter_revoked=filter_revoked,
+        tokens_prompt=total_prompt_tokens,
+        tokens_completion=total_completion_tokens,
+        model=model,
+    )
 
     return ChatResponse(
         answer=answer,

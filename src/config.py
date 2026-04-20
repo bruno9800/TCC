@@ -12,11 +12,13 @@ DOCUMENTS_DIR = PROJECT_ROOT / "regimentos_estatutos_resolucoes"
 MARKDOWN_DIR = PROJECT_ROOT / "data" / "markdown"
 CHUNKS_DIR = PROJECT_ROOT / "data" / "chunks"
 VECTORSTORE_DIR = PROJECT_ROOT / "data" / "vectorstore"
+LOGS_DIR = PROJECT_ROOT / "data" / "logs"
 
 # Ensure data directories exist
 MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 VECTORSTORE_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── API Keys ───────────────────────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

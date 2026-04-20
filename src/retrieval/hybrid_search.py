@@ -37,7 +37,7 @@ class HybridSearchEngine:
     ser ativado opcionalmente via parâmetro.
     """
 
-    def __init__(self, chunks: list[LegalChunk] | None = None, use_bm25: bool = False):
+    def __init__(self, chunks: list[LegalChunk] | None = None, use_bm25: bool = True):
         """
         Inicializa o motor de busca.
 
@@ -70,6 +70,7 @@ class HybridSearchEngine:
         query: str,
         top_k: int = INITIAL_TOP_K,
         filter_revoked: bool = True,
+        query_embedding: list[float] | None = None,
     ) -> list[SearchResult]:
         """
         Busca densa via HNSW (ChromaDB).
@@ -82,6 +83,8 @@ class HybridSearchEngine:
             query: Consulta do usuário.
             top_k: Número de resultados.
             filter_revoked: Se True, exclui documentos revogados.
+            query_embedding: Embedding pré-computado (ex: gerado pelo HyDE).
+                             Se fornecido, o embedding de `query` não é gerado.
 
         Returns:
             Lista de SearchResult ordenada por similaridade cosseno.
@@ -92,6 +95,7 @@ class HybridSearchEngine:
             query=query,
             top_k=top_k,
             where_filter=where_filter,
+            query_embedding=query_embedding,
         )
 
         search_results: list[SearchResult] = []
@@ -120,23 +124,30 @@ class HybridSearchEngine:
         query: str,
         top_k: int = INITIAL_TOP_K,
         filter_revoked: bool = True,
+        hyde_embedding: list[float] | None = None,
     ) -> list[SearchResult]:
         """
-        Busca principal — usa HNSW (dense) por padrão.
+        Busca híbrida: HNSW dense + BM25 esparso, fundidos via RRF.
 
-        Se o BM25 foi ativado na inicialização, combina os resultados
-        via Reciprocal Rank Fusion. Caso contrário, retorna apenas
-        os resultados da busca densa HNSW.
+        Se hyde_embedding for fornecido, a busca densa usa o embedding do
+        documento hipotético (HyDE) em vez do embedding da query original.
+        O BM25 sempre usa os tokens da query original.
 
         Args:
-            query: Consulta do usuário.
+            query: Consulta do usuário (usada pelo BM25 e como fallback do dense).
             top_k: Número de resultados.
             filter_revoked: Se True, exclui documentos revogados.
+            hyde_embedding: Embedding pré-computado pelo HyDE (opcional).
 
         Returns:
             Lista de SearchResult ordenada por relevância.
         """
-        dense_results = self.search_dense(query, top_k=top_k, filter_revoked=filter_revoked)
+        dense_results = self.search_dense(
+            query,
+            top_k=top_k,
+            filter_revoked=filter_revoked,
+            query_embedding=hyde_embedding,
+        )
 
         # Se BM25 não está ativado, retorna apenas dense (HNSW)
         if self.bm25 is None:

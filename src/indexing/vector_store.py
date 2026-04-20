@@ -190,15 +190,19 @@ def query_dense(
     top_k: int = 50,
     where_filter: dict | None = None,
     collection: chromadb.Collection | None = None,
+    query_embedding: list[float] | None = None,
 ) -> dict:
     """
     Realiza busca densa (vetorial) no ChromaDB.
 
     Args:
-        query: Pergunta ou consulta do usuário.
+        query: Pergunta ou consulta do usuário (usado para gerar embedding
+               se query_embedding não for fornecido).
         top_k: Número de resultados a retornar.
         where_filter: Filtro de metadados (ex: {"status": "vigente"}).
         collection: Collection do ChromaDB.
+        query_embedding: Embedding pré-computado (ex: gerado pelo HyDE).
+                         Se fornecido, o embedding de `query` não é gerado.
 
     Returns:
         Dicionário com ids, documents, metadatas, distances.
@@ -206,8 +210,9 @@ def query_dense(
     if collection is None:
         collection = get_or_create_collection()
 
-    # Gera embedding da query
-    query_embedding = generate_embeddings([query])[0]
+    # Usa embedding pré-computado (HyDE) ou gera a partir da query
+    if query_embedding is None:
+        query_embedding = generate_embeddings([query])[0]
 
     results = collection.query(
         query_embeddings=[query_embedding],
