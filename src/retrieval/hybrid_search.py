@@ -52,7 +52,7 @@ class HybridSearchEngine:
         self.bm25 = None
         self.corpus_tokens = None
 
-        if use_bm25:
+        if use_bm25 and self.chunks:
             self._build_bm25_index()
 
     def _build_bm25_index(self):
