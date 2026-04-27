@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import urllib.parse
+from collections.abc import Generator
 
 from openai import OpenAI
 
@@ -309,3 +310,153 @@ def run_chat(
         tokens=TokenUsage(prompt=total_prompt_tokens, completion=total_completion_tokens),
         used_search=True,
     )
+
+
+def stream_chat(
+    message: str,
+    history: list[ChatMessage],
+    top_k: int = 5,
+    filter_revoked: bool = True,
+    model: str = LLM_MODEL,
+) -> Generator[str, None, None]:
+    """
+    Versão streaming do run_chat.
+
+    Emite eventos SSE:
+      - data: {"type": "status", "text": "..."}   — etapas do pipeline
+      - data: {"type": "token",  "text": "..."}   — tokens da resposta final
+      - data: {"type": "done",   "sources": [...]} — finalização com fontes
+      - data: {"type": "error",  "text": "..."}   — erro
+    """
+    client = get_openai_client()
+
+    def emit(obj: dict) -> str:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    try:
+        # ── Passo 1: Decisão ───────────────────────────────────────────────
+        yield emit({"type": "status", "text": "Analisando pergunta..."})
+
+        decision_messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *_build_history_messages(history),
+            {"role": "user", "content": message},
+        ]
+        decision_response = client.chat.completions.create(
+            model=model, messages=decision_messages, temperature=0.0, max_tokens=256,
+        )
+        decision_text = decision_response.choices[0].message.content or ""
+
+        needs_search = True
+        search_query = message
+        direct_response = None
+
+        try:
+            clean = decision_text.strip()
+            if clean.startswith("```"):
+                clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            decision = json.loads(clean)
+            needs_search = decision.get("needs_search", True)
+            if needs_search:
+                search_query = decision.get("search_query", message)
+            else:
+                direct_response = decision.get("direct_response", "")
+        except (json.JSONDecodeError, KeyError):
+            needs_search = True
+
+        # ── Resposta direta (sem busca) ────────────────────────────────────
+        if not needs_search and direct_response:
+            yield emit({"type": "token", "text": direct_response})
+            yield emit({"type": "done", "sources": [], "used_search": False})
+            log_query(
+                question=message, search_query="", used_search=False, sources=[],
+                top_k=top_k, filter_revoked=filter_revoked,
+                tokens_prompt=0, tokens_completion=0, model=model,
+            )
+            return
+
+        # ── Passo 2: RAG pipeline ──────────────────────────────────────────
+        yield emit({"type": "status", "text": "Buscando nos documentos normativos..."})
+
+        hypothetical_doc = generate_hypothetical_document(search_query)
+        hyde_embedding = generate_embeddings([hypothetical_doc])[0]
+
+        engine = get_search_engine()
+        candidates = engine.search_hybrid(
+            query=search_query, filter_revoked=filter_revoked, hyde_embedding=hyde_embedding,
+        )
+
+        yield emit({"type": "status", "text": "Selecionando trechos mais relevantes..."})
+        top_results = rerank(search_query, candidates, top_k=top_k)
+
+        if not top_results:
+            msg = (
+                "Não encontrei informações relevantes nos documentos normativos da UNIVASF "
+                "para essa pergunta. Poderia reformular ou ser mais específico?"
+            )
+            yield emit({"type": "token", "text": msg})
+            yield emit({"type": "done", "sources": [], "used_search": True})
+            return
+
+        context = build_context(top_results)
+        answer_messages = [
+            {"role": "system", "content": ANSWER_PROMPT},
+            *_build_history_messages(history),
+            {
+                "role": "user",
+                "content": (
+                    f"Com base nos documentos normativos fornecidos abaixo, "
+                    f"responda à seguinte pergunta:\n\n"
+                    f"**Pergunta:** {message}\n\n"
+                    f"**Contexto (Documentos Normativos):**\n{context}\n\n"
+                    f"Lembre-se: responda apenas com base nos documentos acima e cite as fontes."
+                ),
+            },
+        ]
+
+        # ── Passo 3: Streaming da resposta final ───────────────────────────
+        yield emit({"type": "status", "text": "Gerando resposta..."})
+
+        full_answer = ""
+        with client.chat.completions.create(
+            model=model,
+            messages=answer_messages,
+            temperature=0.1,
+            max_tokens=1024,
+            stream=True,
+        ) as stream:
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    full_answer += delta
+                    yield emit({"type": "token", "text": delta})
+
+        # ── Monta fontes e finaliza ────────────────────────────────────────
+        sources_out: list[dict] = []
+        seen: set[str] = set()
+        for result in top_results:
+            source_name = result.metadata.get("source", "")
+            if source_name and source_name not in seen:
+                seen.add(source_name)
+                sources_out.append({
+                    "source": source_name,
+                    "category": result.metadata.get("category", ""),
+                    "article_id": result.metadata.get("article_id", ""),
+                    "hierarchy": result.metadata.get("hierarchy", ""),
+                    "score": result.score,
+                    "snippet": result.content[:300],
+                    "download_url": f"/documents/download?source={urllib.parse.quote(source_name)}",
+                })
+
+        yield emit({"type": "done", "sources": sources_out, "used_search": True})
+
+        log_query(
+            question=message, search_query=search_query, used_search=True,
+            sources=[{"source": s["source"], "score": s["score"], "article_id": s["article_id"]} for s in sources_out],
+            top_k=top_k, filter_revoked=filter_revoked,
+            tokens_prompt=0, tokens_completion=0, model=model,
+        )
+
+    except Exception as e:
+        logger.error(f"Erro no stream_chat: {e}", exc_info=True)
+        yield emit({"type": "error", "text": str(e)})

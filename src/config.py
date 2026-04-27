@@ -32,7 +32,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 RERANKER_MODEL = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 
 # ── Retrieval Parameters ──────────────────────────────────────────────────────
-INITIAL_TOP_K = 50        # candidatos iniciais (dense + BM25)
+INITIAL_TOP_K = 20        # candidatos iniciais (dense + BM25)
 RERANK_TOP_K = 5          # documentos finais após reranking
 BM25_WEIGHT = 0.3         # peso da busca esparsa no RRF
 DENSE_WEIGHT = 0.7        # peso da busca densa no RRF

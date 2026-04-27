@@ -93,6 +93,50 @@ Cada item de `sources` inclui o campo `download_url` pronto para uso:
 
 ---
 
+## POST /chat/stream
+
+Versão streaming do `/chat/` via Server-Sent Events (SSE). Emite eventos progressivos enquanto o pipeline executa — o primeiro token da resposta chega antes do processamento completo.
+
+**Request:** idêntico ao `POST /chat/`.
+
+```json
+{
+  "message": "Como funciona o trancamento de matrícula?",
+  "history": [],
+  "top_k": 5,
+  "filter_revoked": true
+}
+```
+
+**Response:** `text/event-stream` — cada linha no formato `data: {json}\n\n`
+
+| `type` | Campos | Descrição |
+|--------|--------|-----------|
+| `status` | `text` | Etapa atual do pipeline |
+| `token` | `text` | Fragmento da resposta gerada |
+| `done` | `sources`, `used_search` | Finalização — mesmo formato de `sources` do `/chat/` |
+| `error` | `text` | Mensagem de erro |
+
+```
+data: {"type": "status", "text": "Analisando pergunta..."}
+data: {"type": "status", "text": "Buscando nos documentos normativos..."}
+data: {"type": "status", "text": "Selecionando trechos mais relevantes..."}
+data: {"type": "status", "text": "Gerando resposta..."}
+data: {"type": "token", "text": "O trancamento de matrícula "}
+data: {"type": "token", "text": "na UNIVASF é regulado..."}
+data: {"type": "done", "sources": [...], "used_search": true}
+```
+
+```bash
+curl -X POST http://localhost:8000/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: sua-chave-aqui" \
+  -N \
+  -d '{"message": "Quais os critérios para trancamento de matrícula?"}'
+```
+
+---
+
 ## GET /documents/search
 
 Busca semântica sobre os documentos normativos. Projetado para uso em campo de busca com debounce — sem HyDE, latência mínima (~200–400ms).
