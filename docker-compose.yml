@@ -10,8 +10,6 @@ services:
     environment:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
-    volumes:
-      - chunk_data:/app/data
     depends_on:
       chromadb:
         condition: service_healthy
@@ -51,8 +49,6 @@ services:
 
 volumes:
   chroma_data:
-    driver: local
-  chunk_data:
     driver: local
 
 networks:
