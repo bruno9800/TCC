@@ -12,6 +12,7 @@ from src.admin.router import router as admin_router
 from src.chat.router import router as chat_router
 from src.documents.router import router as documents_router
 from src.logs.router import router as logs_router
+from src.professors.router import router as professors_router
 from src.auth import get_api_key
 
 app = FastAPI(
@@ -33,6 +34,9 @@ app.add_middleware(
 app.include_router(chat_router, prefix="/chat", tags=["Chat"], dependencies=[Depends(get_api_key)])
 app.include_router(documents_router, prefix="/documents", tags=["Documents"], dependencies=[Depends(get_api_key)])
 app.include_router(logs_router, prefix="/logs", tags=["Logs"], dependencies=[Depends(get_api_key)])
+app.include_router(
+    professors_router, prefix="/professors", tags=["Professors"], dependencies=[Depends(get_api_key)]
+)
 # Autenticação própria (JWT de AdminUser), deliberadamente separada da x-api-key pública.
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 

@@ -47,3 +47,92 @@ class DocumentUpdateRequest(BaseModel):
     revoked: bool | None = None
     revoked_reason: str | None = None
     superseded_by_document_id: int | None = None
+
+
+# ── Corpo Docente ─────────────────────────────────────────────────────────────
+
+
+class DisciplineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    course_id: int
+    name: str
+    code: str | None
+    period: int | None
+    workload: int | None
+
+
+class DisciplineCreateRequest(BaseModel):
+    course_id: int
+    name: str
+    code: str | None = None
+    period: int | None = None
+    workload: int | None = None
+
+
+class ProfessorDisciplineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    semester_year: str
+    schedule_text: str | None
+    room: str | None
+    discipline: DisciplineOut
+
+
+class ProfessorDisciplineAssignRequest(BaseModel):
+    discipline_id: int
+    semester_year: str
+    schedule_text: str | None = None
+    room: str | None = None
+
+
+class ProfessorOut(BaseModel):
+    """Representação de um Professor (ver src/db/models.py), com disciplinas aninhadas."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str
+    email_secondary: str | None
+    department: str | None
+    course_id: int | None
+    area: str | None
+    lattes_url: str | None
+    personal_site_url: str | None
+    is_nde: bool
+    nde_role: str | None
+    bio: str | None
+    created_at: datetime
+    disciplines: list[ProfessorDisciplineOut] = Field(default_factory=list)
+
+
+class ProfessorCreateRequest(BaseModel):
+    name: str
+    email: str
+    email_secondary: str | None = None
+    department: str | None = None
+    course_id: int | None = None
+    area: str | None = None
+    lattes_url: str | None = None
+    personal_site_url: str | None = None
+    is_nde: bool = False
+    nde_role: str | None = None
+    bio: str | None = None
+
+
+class ProfessorUpdateRequest(BaseModel):
+    """Payload de PATCH /admin/professors/{id} — todos os campos opcionais."""
+
+    name: str | None = None
+    email: str | None = None
+    email_secondary: str | None = None
+    department: str | None = None
+    course_id: int | None = None
+    area: str | None = None
+    lattes_url: str | None = None
+    personal_site_url: str | None = None
+    is_nde: bool | None = None
+    nde_role: str | None = None
+    bio: str | None = None

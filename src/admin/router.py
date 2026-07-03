@@ -15,14 +15,21 @@ from sqlalchemy.orm import Session
 
 from src.admin.auth import create_access_token, get_current_admin, verify_password
 from src.admin.schemas import (
+    DisciplineCreateRequest,
+    DisciplineOut,
     DocumentOut,
     DocumentUpdateRequest,
     LoginRequest,
+    ProfessorCreateRequest,
+    ProfessorDisciplineAssignRequest,
+    ProfessorOut,
+    ProfessorUpdateRequest,
     TokenResponse,
 )
 from src.db.models import AdminUser
 from src.db.session import get_db
 from src.documents import service as document_service
+from src.professors import service as professor_service
 
 logger = logging.getLogger(__name__)
 
@@ -148,3 +155,127 @@ async def reindex_document(
         return document_service.reindex_document(db, document_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+# ── Corpo Docente ────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/professors",
+    response_model=ProfessorOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastra um professor",
+)
+async def create_professor(
+    payload: ProfessorCreateRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ProfessorOut:
+    return professor_service.create_professor(db, **payload.model_dump())
+
+
+@router.get("/professors", response_model=list[ProfessorOut], summary="Lista professores")
+async def list_professors(
+    course_id: int | None = None,
+    area: str | None = None,
+    name: str | None = None,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> list[ProfessorOut]:
+    return professor_service.list_professors(db, course_id=course_id, area=area, name=name)
+
+
+@router.get("/professors/{professor_id}", response_model=ProfessorOut, summary="Detalhe de um professor")
+async def get_professor(
+    professor_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ProfessorOut:
+    professor = professor_service.get_professor(db, professor_id)
+    if professor is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Professor não encontrado")
+    return professor
+
+
+@router.patch("/professors/{professor_id}", response_model=ProfessorOut, summary="Atualiza um professor")
+async def update_professor(
+    professor_id: int,
+    payload: ProfessorUpdateRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ProfessorOut:
+    try:
+        return professor_service.update_professor(
+            db, professor_id, **payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete(
+    "/professors/{professor_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove um professor",
+)
+async def delete_professor(
+    professor_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        professor_service.delete_professor(db, professor_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post(
+    "/professors/{professor_id}/disciplines",
+    summary="Associa (ou atualiza) uma disciplina a um professor em um semestre",
+)
+async def assign_discipline(
+    professor_id: int,
+    payload: ProfessorDisciplineAssignRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        assignment = professor_service.assign_discipline(
+            db,
+            professor_id=professor_id,
+            discipline_id=payload.discipline_id,
+            semester_year=payload.semester_year,
+            schedule_text=payload.schedule_text,
+            room=payload.room,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return {
+        "professor_id": assignment.professor_id,
+        "discipline_id": assignment.discipline_id,
+        "semester_year": assignment.semester_year,
+        "schedule_text": assignment.schedule_text,
+        "room": assignment.room,
+    }
+
+
+@router.post(
+    "/disciplines",
+    response_model=DisciplineOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastra uma disciplina (infraestrutura para a Fase 5 — importação do PPC)",
+)
+async def create_discipline(
+    payload: DisciplineCreateRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> DisciplineOut:
+    return professor_service.create_discipline(db, **payload.model_dump())
+
+
+@router.get("/disciplines", response_model=list[DisciplineOut], summary="Lista disciplinas")
+async def list_disciplines(
+    course_id: int | None = None,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> list[DisciplineOut]:
+    return professor_service.list_disciplines(db, course_id=course_id)

@@ -146,12 +146,22 @@ class Professor(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(200), unique=True)
+    email_secondary: Mapped[str | None] = mapped_column(String(200))
     department: Mapped[str | None] = mapped_column(String(200))
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("courses.id"), nullable=True)
+    area: Mapped[str | None] = mapped_column(String(300))  # "Disciplina / Área Principal"
+    lattes_url: Mapped[str | None] = mapped_column(String(300))
+    personal_site_url: Mapped[str | None] = mapped_column(String(300))
+    is_nde: Mapped[bool] = mapped_column(default=False)
+    nde_role: Mapped[str | None] = mapped_column(String(50))  # ex: "Coordenador"; None = sem papel especial
     bio: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
-    disciplines: Mapped[list["ProfessorDiscipline"]] = relationship(back_populates="professor")
+    course: Mapped["Course | None"] = relationship()
+    disciplines: Mapped[list["ProfessorDiscipline"]] = relationship(
+        back_populates="professor", cascade="all, delete-orphan"
+    )
 
 
 class Discipline(Base):
@@ -167,7 +177,9 @@ class Discipline(Base):
     workload: Mapped[int | None]
 
     course: Mapped["Course"] = relationship()
-    professors: Mapped[list["ProfessorDiscipline"]] = relationship(back_populates="discipline")
+    professors: Mapped[list["ProfessorDiscipline"]] = relationship(
+        back_populates="discipline", cascade="all, delete-orphan"
+    )
 
 
 class ProfessorDiscipline(Base):

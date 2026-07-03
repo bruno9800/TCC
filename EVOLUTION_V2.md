@@ -83,8 +83,8 @@ Isso é um bug real e pré-existente da v1, não introduzido pela v2 — descobe
 | 0 | Fundação de dados (Postgres + SQLAlchemy + Alembic) | ✅ Concluída |
 | 1 | Refatoração da ingestão (`IngestionService`, corrige staleness do BM25 e chunks órfãos) | ✅ Concluída |
 | 2 | API administrativa de documentos (upload, reindex, auth de admin) | ✅ Concluída |
-| 3 | Corpo docente (dados estruturados + Tool) | 🔜 Próxima |
-| 4 | Orquestração multi-tool (function calling nativo) | ⏳ Pendente |
+| 3 | Corpo docente (dados estruturados + Tool) | ✅ Concluída (dados/CRUD — Tool é Fase 4) |
+| 4 | Orquestração multi-tool (function calling nativo) | 🔜 Próxima |
 | 5 | Expansão de conteúdo (Manual do Aluno etc.) | ⏳ Pendente |
 | 6 | Escopo por curso | ⏳ Pendente |
 | 7 | Calendário acadêmico (condicional) | ⏳ Pendente |
@@ -211,11 +211,42 @@ O bug do `DELETE` é um bom exemplo para a seção de **Discussão/Limitações*
 
 ---
 
+## Fase 3 — Corpo Docente (dados estruturados + CRUD + seed real do CECOMP)
+
+**Status:** ✅ Concluída e verificada — 2026-07-03
+
+**Objetivo:** fechar a decisão **D9** do `EVOLUTION.md` (v1) — professores são dado estruturado, consultados via SQL, não via RAG — entregando a camada de dados e a API administrativa. A integração com o agente de chat (`ProfessorTool`) fica para a Fase 4, que ainda não existe.
+
+### Mudança de escopo em relação ao plano original
+
+O plano inicial desta fase assumia que o vínculo profissional↔curso passaria por `Discipline`/`ProfessorDiscipline` (M2M criadas na Fase 0). O usuário forneceu os dados reais do corpo docente do CECOMP (Colegiado de Engenharia da Computação) — 15 professores, sendo 7 do NDE (Núcleo Docente Estruturante, um deles Coordenador) — com nome, área principal, Lattes, site pessoal e e-mail. Esse dado é **texto livre de área de atuação**, não um vínculo curricular preciso (código de disciplina, período, carga horária), então população de `Discipline`/`ProfessorDiscipline` a partir dele seria inventar estrutura que os dados não têm. Decisão tomada em conjunto com o usuário: `Professor` ganhou `course_id` (afiliação direta ao curso) e os campos que os dados reais exigem (`area`, `lattes_url`, `personal_site_url`, `is_nde`, `nde_role`, `email_secondary`); `Discipline`/`ProfessorDiscipline` permanecem no schema como infraestrutura para quando houver dado curricular preciso (Fase 5, importação do PPC), sem serem populadas agora.
+
+### O que foi feito
+
+- `Professor` estendido em [src/db/models.py](src/db/models.py) com os campos acima + `cascade="all, delete-orphan"` em `Professor.disciplines`/`Discipline.professors` (correção **proativa** — ver lição da Fase 2 abaixo). Nova migration (`46fd59ba203e`), confirmada tocando apenas `professors`.
+- `src/professors/` (novo, mesma forma de `src/documents/`): `service.py` (`ProfessorService` completo + `create_discipline`/`list_disciplines`/`assign_discipline` como infraestrutura), `router.py` (`GET /professors?course_id=&area=&name=`, público via `x-api-key`).
+- `src/admin/schemas.py`/`router.py` estendidos: CRUD completo de `/admin/professors` (+ `/disciplines`), com `ProfessorOut` trazendo as disciplinas aninhadas na mesma resposta.
+- `scripts/seed_professors_engcomp.py` (novo) — semeia os 15 professores reais, idempotente por e-mail. **Diferente do documento de teste da Fase 2, este dado fica no sistema.**
+
+### Lição da Fase 2 aplicada preventivamente
+
+Na Fase 2, `IngestionJob` sem `relationship(cascade=...)` quebrou o `DELETE` de documentos com um `IntegrityError` só descoberto ao testar de ponta a ponta. Desta vez, antes de escrever o serviço, adicionei `cascade="all, delete-orphan"` em `Professor.disciplines`/`Discipline.professors` diretamente no modelo (Escopo item 1) — e o `DELETE /admin/professors/{id}` de teste, com uma associação de disciplina ativa, funcionou de primeira (204, sem erro), confirmando que vale a pena revisar cascades de relacionamento *antes* de escrever `delete_*()`, não depois de um 500 em produção.
+
+### Verificação realizada
+
+Migration aplicada (só `professors` mudou); seed rodado 2x (15 criados na primeira, 0 na segunda — idempotência); `GET /professors` público testado com os 3 filtros (`course_id=1` → 15, `area=Robótica` → Juracy Emanuel, `name=Jadsonlee` → 1 resultado); conferido via SQL que `is_nde=true` bate exatamente com os 7 do NDE e `nde_role='Coordenador'` só em Brauliro Gonçalves Leal; ciclo completo de CRUD com 1 professor de teste (`POST`/`GET`/`PATCH`) + 1 disciplina de teste + associação — repetida a mesma associação para confirmar **upsert idempotente** (200, dados atualizados, sem `IntegrityError`) em vez de descobrir o problema depois; `DELETE` do professor de teste confirmado limpo (cascade); disciplina de teste removida manualmente (não há endpoint de exclusão — decisão deliberada, ver Fora de Escopo). Estado final: exatamente 15 professores reais, 0 disciplinas residuais.
+
+### Nota para a escrita do TCC II
+
+Bom exemplo para a seção de **Metodologia** de como a modelagem evolui em resposta a dado real, não apenas a especificação teórica: o plano original (`PLANO_V2.md`) previa vínculo via `Discipline`, mas o dado real disponível não sustentava essa estrutura sem inventar informação — a decisão de adicionar `course_id`/`area` diretamente em `Professor`, mantendo `Discipline` como infraestrutura para depois, é um exemplo concreto de "modelar o dado que você tem, preparar para o dado que você vai ter" sem overengineering nem submodelagem.
+
+---
+
 ## Itens Pendentes / Próximos Passos
 
 > Atualizar ao final de cada fase.
 
-- [ ] Planejar e implementar Fase 3 (Corpo Docente): `Professor`/`Discipline`/`ProfessorDiscipline`, endpoints admin + `GET /professors` público.
-- [ ] Planejar e implementar Fase 4 (Orquestração multi-tool): substituir a decisão binária de `chat/service.py` por function calling nativo, eliminando a duplicação `run_chat`/`stream_chat` (D4) e resolvendo D5.
-- [ ] Decidir o comportamento de `revoked` em reindex (achado acima) quando o painel admin existir.
+- [ ] Planejar e implementar Fase 4 (Orquestração multi-tool): substituir a decisão binária de `chat/service.py` por function calling nativo, eliminando a duplicação `run_chat`/`stream_chat` (D4) e resolvendo D5. `ProfessorTool` (consulta estruturada sobre os 15 professores reais) entra aqui.
+- [ ] Fase 5 (expansão de conteúdo): importação do PPC estruturado alimentaria `Discipline`/`ProfessorDiscipline` com dado curricular preciso (períodos, códigos, ofertas por semestre) — hoje só existe `Professor.area` (texto livre).
+- [ ] Decidir o comportamento de `revoked` em reindex de documentos (achado da Fase 2) quando o painel admin existir.
 - [ ] Ativar `score_threshold` no reranker (D3 do diagnóstico) — correção pontual, pode ser feita a qualquer momento, independente das fases.
