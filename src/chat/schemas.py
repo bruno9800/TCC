@@ -26,6 +26,14 @@ class ChatRequest(BaseModel):
     )
     top_k: int = Field(default=5, ge=1, le=10, description="Documentos finais pós-reranking")
     filter_revoked: bool = Field(default=True, description="Filtrar documentos revogados")
+    course_id: int | None = Field(
+        default=None,
+        description=(
+            "Escopa a busca a um curso específico (GET /courses lista os disponíveis). "
+            "Documentos/professores/eventos institucionais (sem curso associado) "
+            "continuam visíveis independente do escopo. Omitir busca em tudo."
+        ),
+    )
 
 
 class SourceInfo(BaseModel):

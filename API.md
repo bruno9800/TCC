@@ -34,7 +34,8 @@ Endpoint principal. O agente decide automaticamente quando acionar o pipeline RA
     { "role": "assistant", "content": "Olá! Como posso ajudar?" }
   ],
   "top_k": 5,
-  "filter_revoked": true
+  "filter_revoked": true,
+  "course_id": 1
 }
 ```
 
@@ -44,6 +45,7 @@ Endpoint principal. O agente decide automaticamente quando acionar o pipeline RA
 | `history` | array | Não | Histórico `[{role, content}]` — padrão: `[]` |
 | `top_k` | int (1–10) | Não | Documentos pós-reranking — padrão: `5` |
 | `filter_revoked` | bool | Não | Filtrar documentos revogados — padrão: `true` |
+| `course_id` | int | Não | Escopa a busca a um curso (`GET /courses` lista os disponíveis). Documentos/professores/eventos institucionais (sem curso associado) continuam visíveis independente do escopo. Omitir busca em tudo — padrão: `null` |
 
 **Response:**
 
@@ -80,7 +82,7 @@ Endpoint principal. O agente decide automaticamente quando acionar o pipeline RA
 | `used_search` | bool | `true` = alguma ferramenta foi acionada (RAG e/ou corpo docente), `false` = resposta direta |
 | `used_tools` | array de string | Nomes das ferramentas acionadas nesta resposta (ex: `["search_normative_documents", "search_professors"]` — o agente pode combinar as duas na mesma pergunta) |
 
-O agente (desde a v2, Fase 4) decide autonomamente, via *function calling* nativo da OpenAI, quais ferramentas usar — hoje: `search_normative_documents` (RAG sobre estatutos/regimentos/resoluções) e `search_professors` (consulta estruturada ao corpo docente). Cada item de `sources` tem um campo `origin` (`"rag"` ou `"professor"`) indicando de onde veio:
+O agente decide autonomamente, via *function calling* nativo da OpenAI, quais ferramentas usar — hoje: `search_normative_documents` (RAG sobre estatutos/regimentos/resoluções, inclui o PPC), `search_professors` (corpo docente), `search_disciplines` (matriz curricular) e `search_academic_calendar` (prazos/datas do calendário acadêmico). Todas exceto a primeira são consultas estruturadas (SQL), não RAG — fatos exatos não devem depender de recall de embedding. Cada item de `sources` tem um campo `origin` (`"rag"`, `"professor"`, `"discipline"` ou `"calendar"`) indicando de onde veio:
 
 ```json
 // origin: "rag" — inclui download_url pronto para uso
@@ -106,7 +108,25 @@ O agente (desde a v2, Fase 4) decide autonomamente, via *function calling* nativ
   "snippet": "jadsonlee.sa@univasf.edu.br — Sistemas Embarcados",
   "download_url": ""
 }
+
+// origin: "discipline"
+{
+  "origin": "discipline",
+  "source": "Compiladores (COMP)",
+  "category": "Matriz Curricular — 7º período",
+  "snippet": "Carga horária: 60h | Pré-requisito: AED, LFA e OAC"
+}
+
+// origin: "calendar"
+{
+  "origin": "calendar",
+  "source": "Trancamento do período ou cancelamento de disciplinas (com ônus), referente a 2026.1",
+  "category": "Calendário Acadêmico — trancamento",
+  "snippet": "2026-04-06 a 2026-04-10"
+}
 ```
+
+`course_id` (opcional, ver tabela acima) escopa `search_normative_documents`/`search_professors`/`search_disciplines`/`search_academic_calendar` a um curso — conteúdo institucional (sem curso associado, ex.: Estatuto, Regimento Geral, a maior parte do calendário acadêmico) continua visível independente do escopo. `GET /courses` lista os cursos disponíveis.
 
 ---
 

@@ -54,7 +54,10 @@ def execute(arguments: dict, context: dict) -> dict:
 
     engine = get_search_engine()
     candidates = engine.search_hybrid(
-        query=query, filter_revoked=filter_revoked, hyde_embedding=hyde_embedding
+        query=query,
+        filter_revoked=filter_revoked,
+        hyde_embedding=hyde_embedding,
+        course_id=context.get("course_id"),
     )
     top_results = rerank(query, candidates, top_k=top_k)
 

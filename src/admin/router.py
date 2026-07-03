@@ -18,6 +18,8 @@ from src.admin.schemas import (
     AcademicEventCreateRequest,
     AcademicEventOut,
     AcademicEventUpdateRequest,
+    CourseCreateRequest,
+    CourseOut,
     DisciplineCreateRequest,
     DisciplineOut,
     DocumentOut,
@@ -30,6 +32,7 @@ from src.admin.schemas import (
     TokenResponse,
 )
 from src.calendar_events import service as calendar_service
+from src.courses import service as course_service
 from src.db.models import AdminUser
 from src.db.session import get_db
 from src.documents import service as document_service
@@ -362,3 +365,41 @@ async def delete_event(
         calendar_service.delete_event(db, event_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+# ── Cursos ───────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/courses",
+    response_model=CourseOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastra um curso",
+)
+async def create_course(
+    payload: CourseCreateRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> CourseOut:
+    return course_service.create_course(db, **payload.model_dump())
+
+
+@router.get("/courses", response_model=list[CourseOut], summary="Lista cursos")
+async def list_courses(
+    active_only: bool = False,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> list[CourseOut]:
+    return course_service.list_courses(db, active_only=active_only)
+
+
+@router.get("/courses/{course_id}", response_model=CourseOut, summary="Detalhe de um curso")
+async def get_course(
+    course_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> CourseOut:
+    course = course_service.get_course(db, course_id)
+    if course is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Curso não encontrado")
+    return course

@@ -83,12 +83,36 @@ class HybridSearchEngine:
             self.corpus_tokens = None
         logger.info(f"HybridSearchEngine recarregado: {len(self.chunks)} chunks.")
 
+    @staticmethod
+    def _build_where_filter(filter_revoked: bool, course_id: int | None) -> dict | None:
+        """
+        Monta o filtro de metadados do ChromaDB combinando status e curso.
+
+        `course_id` casa com o curso pedido OU com o sentinela `0`
+        (institucional — `None` no dado de origem, ver
+        `src/indexing/vector_store.py::index_chunks`), para que documentos
+        institucionais (Estatuto, Regimento Geral) continuem visíveis mesmo
+        com a busca escopada a um curso específico.
+        """
+        conditions: list[dict] = []
+        if filter_revoked:
+            conditions.append({"status": "vigente"})
+        if course_id is not None:
+            conditions.append({"course_id": {"$in": [course_id, 0]}})
+
+        if not conditions:
+            return None
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
+
     def search_dense(
         self,
         query: str,
         top_k: int = INITIAL_TOP_K,
         filter_revoked: bool = True,
         query_embedding: list[float] | None = None,
+        course_id: int | None = None,
     ) -> list[SearchResult]:
         """
         Busca densa via HNSW (ChromaDB).
@@ -103,11 +127,13 @@ class HybridSearchEngine:
             filter_revoked: Se True, exclui documentos revogados.
             query_embedding: Embedding pré-computado (ex: gerado pelo HyDE).
                              Se fornecido, o embedding de `query` não é gerado.
+            course_id: Se fornecido, escopa a busca a esse curso (mais
+                       documentos institucionais, ver `_build_where_filter`).
 
         Returns:
             Lista de SearchResult ordenada por similaridade cosseno.
         """
-        where_filter = {"status": "vigente"} if filter_revoked else None
+        where_filter = self._build_where_filter(filter_revoked, course_id)
 
         results = query_dense(
             query=query,
@@ -143,6 +169,7 @@ class HybridSearchEngine:
         top_k: int = INITIAL_TOP_K,
         filter_revoked: bool = True,
         hyde_embedding: list[float] | None = None,
+        course_id: int | None = None,
     ) -> list[SearchResult]:
         """
         Busca híbrida: HNSW dense + BM25 esparso, fundidos via RRF.
@@ -156,6 +183,8 @@ class HybridSearchEngine:
             top_k: Número de resultados.
             filter_revoked: Se True, exclui documentos revogados.
             hyde_embedding: Embedding pré-computado pelo HyDE (opcional).
+            course_id: Se fornecido, escopa a busca a esse curso (mais
+                       documentos institucionais, ver `_build_where_filter`).
 
         Returns:
             Lista de SearchResult ordenada por relevância.
@@ -165,6 +194,7 @@ class HybridSearchEngine:
             top_k=top_k,
             filter_revoked=filter_revoked,
             query_embedding=hyde_embedding,
+            course_id=course_id,
         )
 
         # Se BM25 não está ativado, retorna apenas dense (HNSW)
@@ -187,6 +217,8 @@ class HybridSearchEngine:
         for idx, score in scored_indices:
             if score > 0:
                 chunk = self.chunks[idx]
+                if course_id is not None and chunk.metadata.course_id not in (None, course_id):
+                    continue
                 meta = {
                     "source": chunk.metadata.source,
                     "category": chunk.metadata.category,

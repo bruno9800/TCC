@@ -129,6 +129,7 @@ def run_chat(
     history: list[ChatMessage],
     top_k: int = 5,
     filter_revoked: bool = True,
+    course_id: int | None = None,
     model: str = LLM_MODEL,
 ) -> ChatResponse:
     """Executa o agente e retorna a resposta completa (não-streaming)."""
@@ -145,6 +146,7 @@ def run_chat(
             db=db,
             top_k=top_k,
             filter_revoked=filter_revoked,
+            course_id=course_id,
             model=model,
         ):
             if event["type"] == "token":
@@ -176,6 +178,7 @@ def stream_chat(
     history: list[ChatMessage],
     top_k: int = 5,
     filter_revoked: bool = True,
+    course_id: int | None = None,
     model: str = LLM_MODEL,
 ) -> Generator[str, None, None]:
     """
@@ -199,6 +202,7 @@ def stream_chat(
             db=db,
             top_k=top_k,
             filter_revoked=filter_revoked,
+            course_id=course_id,
             model=model,
         ):
             if event["type"] == "status":

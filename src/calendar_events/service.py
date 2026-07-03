@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.db.models import AcademicEvent
@@ -52,7 +53,11 @@ def list_events(
 ) -> list[AcademicEvent]:
     query = db.query(AcademicEvent)
     if course_id is not None:
-        query = query.filter(AcademicEvent.course_id == course_id)
+        # Inclui eventos institucionais (course_id IS NULL — a maioria do calendário
+        # acadêmico real, que vale pra UNIVASF inteira), não só os do curso pedido.
+        query = query.filter(
+            or_(AcademicEvent.course_id == course_id, AcademicEvent.course_id.is_(None))
+        )
     if category is not None:
         query = query.filter(AcademicEvent.category.ilike(f"%{category}%"))
     if academic_period is not None:

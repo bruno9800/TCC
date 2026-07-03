@@ -87,7 +87,7 @@ Isso é um bug real e pré-existente da v1, não introduzido pela v2 — descobe
 | 4 | Orquestração multi-tool (function calling nativo) | ✅ Concluída |
 | 5a | PPC real (RAG + matriz curricular estruturada) | ✅ Concluída |
 | 5b | Calendário Acadêmico (dado estruturado + Tool) | ✅ Concluída |
-| 6 | Escopo por curso | ⏳ Pendente |
+| 6 | Escopo por curso | ✅ Concluída |
 | 7 | Calendário acadêmico (condicional) | ✅ Absorvida pela Fase 5b (dado real ficou disponível antes da condição de demanda validada) |
 | 8 | Observabilidade admin (opcional) | ⏳ Pendente |
 
@@ -340,11 +340,43 @@ Junto com o achado do `DisciplineTool` na Fase 5a, esta fase fecha o terceiro (e
 
 ---
 
+## Fase 6 — Escopo por Curso
+
+**Status:** ✅ Concluída e verificada — 2026-07-03
+
+**Objetivo:** permitir que `POST /chat/` escope a busca a um curso específico (`ChatRequest.course_id`), item que faltava do roadmap original (`PLANO_V2.md`) para o sistema deixar de estar implicitamente hardcoded a um único curso. Levantamento prévio mostrou que a maior parte da infraestrutura já existia e nunca tinha sido usada: `orchestrator.run()` já aceitava `course_id` e já repassava no `context` para as tools (Fase 4); `ProfessorTool`/`DisciplineTool`/`CalendarTool` já liam `context.get("course_id")` e já filtravam nos serviços SQL (Fases 3/5b); `ChunkMetadata.course_id` e o sentinela `None→0` no ChromaDB já existiam (Fase 1). Era majoritariamente um trabalho de "fechar o circuito" do topo (`ChatRequest`) até o fundo (`HybridSearchEngine`), não uma feature nova do zero.
+
+### Achado durante o planejamento (antes de qualquer código): correção de semântica institucional
+
+`list_professors(course_id=N)`/`list_events(course_id=N)` filtravam com `WHERE course_id = N` — o que **excluiria** silenciosamente linhas com `course_id IS NULL` (institucional). Isso nunca tinha se manifestado como bug porque `course_id` nunca era passado de fato. Mas dos 121 eventos do calendário real (Fase 5b), **todos têm `course_id=None`** (o calendário vale pra UNIVASF inteira). Se o escopo por curso tivesse sido ligado sem essa correção, **toda pergunta de calendário escopada a um curso teria zerado silenciosamente** — a mesma coisa valeria pro RAG (48 dos 49 documentos indexados são institucionais, só o PPC é específico de ENGCOMP). Corrigido nos três lugares onde `course_id` é filtrado, com a mesma semântica: "linhas do curso pedido **OU** institucionais", não só "linhas do curso pedido":
+- SQL (`Professor`, `AcademicEvent`): `or_(Model.course_id == course_id, Model.course_id.is_(None))`.
+- ChromaDB (`where`, via novo `HybridSearchEngine._build_where_filter`): `{"course_id": {"$in": [course_id, 0]}}`.
+- BM25 (filtro em Python sobre `ChunkMetadata.course_id`, que continua `None`, não `0` — o sentinela só existe no lado ChromaDB): `chunk.metadata.course_id in (None, course_id)`.
+
+Esse achado só foi possível porque a exploração do código (antes de escrever qualquer linha) cruzou o dado real já semeado (Fase 5b) com o comportamento do filtro — reforça o valor de investigar o estado real dos dados antes de montar um plano, não só a estrutura do schema.
+
+### O que foi feito
+
+- `ChatRequest.course_id: int | None = None` (aditivo) — threading até `run_chat`/`stream_chat`/`chat_endpoint`/`orchestrator.run` (a maior parte já aceitava o parâmetro, só nunca era chamada com um valor).
+- `HybridSearchEngine._build_where_filter(filter_revoked, course_id)` (novo helper): monta o filtro combinado de status + curso para o ChromaDB; `search_dense`/`search_hybrid` ganharam o parâmetro `course_id`, incluindo o filtro equivalente no lado BM25.
+- `RagTool.execute()`: extrai `context.get("course_id")` e repassa para `search_hybrid`.
+- `src/courses/` (novo módulo, mesmo formato de `src/professors/`): `service.py` (`create_course`, `list_courses`, `get_course`) e `router.py` (`GET /courses`, público). `src/admin/router.py` ganhou `POST/GET/GET{id} /admin/courses` — sem `PATCH`/`DELETE` (cursos mudam raramente, mesma decisão já tomada para `Discipline` na Fase 3).
+- `API.md` atualizado: campo `course_id` documentado no contrato de `/chat/`, e a explicação de `origin`/tools corrigida para incluir `discipline`/`calendar` (que já existiam desde a Fase 5 mas nunca tinham sido documentados ali — drift pego de passagem).
+
+### Verificação realizada
+
+Regressão: `POST /chat/` sem `course_id` continua buscando em tudo (idêntico a antes). Criado curso de teste via `POST /admin/courses` (admin efêmero, removido ao final): escopado a `course_id=1` (ENGCOMP), pergunta sobre o PPC (curso-específico) encontra normalmente e pergunta sobre o Estatuto (institucional) também encontra; escopado ao curso de teste (sem documentos próprios), a mesma pergunta sobre o PPC **não** encontra (confirma isolamento) mas o Estatuto continua acessível; pergunta sobre professor de ENGCOMP escopada ao curso de teste retorna "não encontrado" (confirma isolamento também no lado estruturado). Teste decisivo: escopado a `course_id=1`, "quando é o período de trancamento de matrícula em 2026.1?" continua respondendo a data exata via `search_academic_calendar` — confirma que a correção do `IS NULL` realmente evitou a regressão descrita no achado acima (sem ela, essa resposta teria vindo vazia). `GET /courses` público confirmado listando os cursos. `POST /chat/stream` com `course_id` testado e retornando os eventos corretos.
+
+### Nota para a escrita do TCC II
+
+O achado da semântica institucional é um bom exemplo para a seção de **Metodologia/Processo** do TCC: o levantamento de contexto antes de planejar (não só ler o schema, mas cruzar com o dado real já semeado) preveniu uma regressão que só apareceria em produção, com uma pergunta real de calendário retornando vazio sem nenhum erro visível — o tipo de bug silencioso mais difícil de pegar em teste manual ad-hoc.
+
+---
+
 ## Itens Pendentes / Próximos Passos
 
 > Atualizar ao final de cada fase.
 
-- [ ] Fase 6 (escopo por curso): expor `course_id` em `ChatRequest`, filtro `$or` no retrieval, `GET /courses`.
 - [ ] Refinar `ProfessorTool` para aceitar `nde_role`/`is_nde` como parâmetro de busca (achado da Fase 4).
 - [ ] Decidir o comportamento de `revoked` em reindex de documentos (achado da Fase 2) quando o painel admin existir.
 - [ ] Ativar `score_threshold` no reranker (D3 do diagnóstico) — pendente de calibração empírica contra a distribuição real de scores do `BAAI/bge-reranker-v2-m3` (achado da Fase 4: não é garantidamente 0–1 como o Cohere Rerank que a metodologia do TCC1 assume).

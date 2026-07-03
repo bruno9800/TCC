@@ -12,6 +12,7 @@ populados a partir de texto livre de "área principal".
 
 from __future__ import annotations
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from src.db.models import Discipline, Professor, ProfessorDiscipline
@@ -67,7 +68,10 @@ def list_professors(
 ) -> list[Professor]:
     query = _with_disciplines(db.query(Professor))
     if course_id is not None:
-        query = query.filter(Professor.course_id == course_id)
+        # Inclui professores institucionais (course_id IS NULL), não só os do curso pedido.
+        query = query.filter(
+            or_(Professor.course_id == course_id, Professor.course_id.is_(None))
+        )
     if area is not None:
         query = query.filter(Professor.area.ilike(f"%{area}%"))
     if name is not None:

@@ -17,6 +17,24 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+# ── Cursos ───────────────────────────────────────────────────────────────────
+
+
+class CourseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    active: bool
+
+
+class CourseCreateRequest(BaseModel):
+    code: str
+    name: str
+    active: bool = True
+
+
 class DocumentOut(BaseModel):
     """Representação administrativa de um Document (ver src/db/models.py)."""
 
