@@ -84,8 +84,8 @@ Isso é um bug real e pré-existente da v1, não introduzido pela v2 — descobe
 | 1 | Refatoração da ingestão (`IngestionService`, corrige staleness do BM25 e chunks órfãos) | ✅ Concluída |
 | 2 | API administrativa de documentos (upload, reindex, auth de admin) | ✅ Concluída |
 | 3 | Corpo docente (dados estruturados + Tool) | ✅ Concluída (dados/CRUD — Tool é Fase 4) |
-| 4 | Orquestração multi-tool (function calling nativo) | 🔜 Próxima |
-| 5 | Expansão de conteúdo (Manual do Aluno etc.) | ⏳ Pendente |
+| 4 | Orquestração multi-tool (function calling nativo) | ✅ Concluída |
+| 5 | Expansão de conteúdo (Manual do Aluno etc.) | 🔜 Próxima |
 | 6 | Escopo por curso | ⏳ Pendente |
 | 7 | Calendário acadêmico (condicional) | ⏳ Pendente |
 | 8 | Observabilidade admin (opcional) | ⏳ Pendente |
@@ -242,11 +242,49 @@ Bom exemplo para a seção de **Metodologia** de como a modelagem evolui em resp
 
 ---
 
+## Fase 4 — Orquestração Multi-Tool (function calling nativo)
+
+**Status:** ✅ Concluída e verificada — 2026-07-03
+
+**Objetivo:** a mudança mais profunda do roadmap (`PLANO_V2.md` §10.7) — substituir a decisão binária manual ("buscar ou não", um JSON parseado à mão) por *function calling* nativo da OpenAI, com um registro de Tools extensível. Resolve **D5** (o parsing manual não escalava para múltiplas ferramentas — era literalmente o que bloqueava plugar o `ProfessorTool` da Fase 3) e **D4** (a duplicação quase total entre `run_chat`/`stream_chat`).
+
+### O que foi feito
+
+- `src/agent/tools/rag_tool.py` e `src/agent/tools/professor_tool.py` (novos): wraps finos sobre o pipeline de retrieval (HyDE + busca híbrida + reranking, Fases anteriores) e sobre `ProfessorService` (Fase 3) — **nenhuma lógica de busca foi reimplementada**, só reorganizada atrás de um contrato uniforme (`execute(arguments, context) -> {"summary": str, "sources": list[dict]}`).
+- `src/agent/orchestrator.py` (novo): uma única função geradora `run()` — chama o LLM com `tools=[...]`; sem `tool_calls`, a própria resposta já é final (cumprimentos/follow-ups); com `tool_calls` (1 ou mais — a API já suporta paralelismo nativo), executa cada tool, monta as mensagens `role: "tool"`, e faz uma segunda chamada (streaming, com `stream_options={"include_usage": True}` para não perder a contagem de tokens) para sintetizar a resposta final com citação obrigatória.
+- `src/chat/service.py` reescrito: `run_chat`/`stream_chat` mantiveram a **assinatura pública exata de antes** — viraram adaptadores finos que consomem o generator do orchestrator. `chat/router.py` **não precisou de nenhuma mudança**.
+- `src/chat/schemas.py`: extensão aditiva — `SourceInfo.origin` (`"rag"` | `"professor"`) e `ChatResponse.used_tools`. Contrato antigo continua válido para quem só lê os campos de sempre.
+- `API.md` atualizado com os campos novos.
+
+### Decisão de arquitetura: sessão do banco gerenciada dentro do generator, não via `Depends(get_db)`
+
+Diferente do padrão estabelecido nas Fases 2/3 (`Depends(get_db)` no router, `db` passado pra service), aqui a sessão é aberta/fechada **dentro de** `run_chat`/`stream_chat`. Motivo específico: com `StreamingResponse`, o generator (`stream_chat`) só é consumido pelo Starlette **depois** que a função da rota já retornou — uma sessão injetada via `Depends` seria fechada antes do generator (que precisa de `db` para o `ProfessorTool`) terminar de rodar. É um gotcha conhecido de FastAPI + `Depends` + streaming, evitado aqui antes de virar bug — na mesma linha da lição da Fase 2 (cascade de `IngestionJob`) e da correção preventiva da Fase 3 (cascade de `Professor.disciplines`): revisar o ciclo de vida de recursos *antes* de escrever o código, não depois de um erro em produção.
+
+### Por que `src/generation/generator.py` e `src/evaluation/` não foram tocados
+
+`scripts/run_eval.py`/`src/evaluation/ragas_eval.py` chamam `generator.generate_answer()`/`SYSTEM_PROMPT` diretamente, sem passar por `chat/service.py` — é um caminho deliberadamente desacoplado do agente, usado para medir a qualidade "crua" do pipeline de retrieval+geração (baseline RAGAS). Preservar esse módulo intocado nesta fase mantém esse baseline válido para comparações futuras; a lógica de citação/resposta do **agente** agora vive só no `SYSTEM_PROMPT` do orchestrator.
+
+### Achado (não é bug, registrado para calibração futura)
+
+Em uma pergunta de teste combinando NDE ("quem coordena o NDE de Engenharia da Computação?"), o `search_professors` foi corretamente acionado mas não encontrou o professor porque a busca por `name`/`area` não cobre o campo `nde_role` — o agente respondeu honestamente "não encontrei" em vez de inventar. Correto do ponto de vista de segurança contra alucinação, mas é uma lacuna de cobertura da tool (poderia aceitar um parâmetro `nde_role`/`is_nde` para esse tipo de pergunta). Não corrigido agora — funcionalidade nova, não regressão, fica como refinamento futuro da tool.
+
+### Verificação realizada
+
+Sequência completa contra a API real: saudação sem tools (`used_tools=[]`); pergunta normativa (trancamento de matrícula) → `search_normative_documents`, citação correta do Art. 72; pergunta sobre professor (Jadsonlee da Silva Sá) → `search_professors`, dados batendo com o seed da Fase 3; pergunta combinada sobre NDE → **as duas tools na mesma resposta**, com fontes `origin="rag"` e a tentativa de `origin="professor"` (achado acima); streaming (`/chat/stream`) repetido para pergunta normativa e de professor — 59 eventos `token` reais (token-a-token), evento `done` com `sources`/`used_tools` idênticos ao endpoint não-streaming para a mesma pergunta; follow-up com histórico (pergunta normativa → "e qual o prazo?") — novo `tool_call` disparado com o contexto da conversa, resposta honesta quando a informação não estava no contexto recuperado; `data/logs/queries.jsonl` confirmado registrando `used_search` corretamente para todos os casos acima.
+
+### Nota para a escrita do TCC II
+
+Esta fase é o núcleo da seção de **Arquitetura do Agente** do TCC II — é a evidência mais direta de que "Advanced RAG" evoluiu para algo mais próximo de "Modular RAG" (na taxonomia do TCC I, seção 2.1: Naive → Advanced → Modular), com um LLM decidindo autonomamente entre múltiplas fontes de conhecimento (não-paramétrica via RAG, estruturada via SQL) em vez de um pipeline fixo de uma única fonte. O teste da pergunta combinada sobre NDE é um bom exemplo para ilustrar isso na monografia — mostra o agente escolhendo E combinando fontes heterogêneas numa única resposta.
+
+---
+
 ## Itens Pendentes / Próximos Passos
 
 > Atualizar ao final de cada fase.
 
-- [ ] Planejar e implementar Fase 4 (Orquestração multi-tool): substituir a decisão binária de `chat/service.py` por function calling nativo, eliminando a duplicação `run_chat`/`stream_chat` (D4) e resolvendo D5. `ProfessorTool` (consulta estruturada sobre os 15 professores reais) entra aqui.
-- [ ] Fase 5 (expansão de conteúdo): importação do PPC estruturado alimentaria `Discipline`/`ProfessorDiscipline` com dado curricular preciso (períodos, códigos, ofertas por semestre) — hoje só existe `Professor.area` (texto livre).
+- [ ] Fase 5 (expansão de conteúdo): Manual do Aluno, importação do PPC estruturado (alimentaria `Discipline`/`ProfessorDiscipline` com dado curricular preciso — períodos, códigos, ofertas por semestre).
+- [ ] Fase 6 (escopo por curso): expor `course_id` em `ChatRequest`, filtro `$or` no retrieval, `GET /courses`.
+- [ ] Refinar `ProfessorTool` para aceitar `nde_role`/`is_nde` como parâmetro de busca (achado da Fase 4).
 - [ ] Decidir o comportamento de `revoked` em reindex de documentos (achado da Fase 2) quando o painel admin existir.
-- [ ] Ativar `score_threshold` no reranker (D3 do diagnóstico) — correção pontual, pode ser feita a qualquer momento, independente das fases.
+- [ ] Ativar `score_threshold` no reranker (D3 do diagnóstico) — pendente de calibração empírica contra a distribuição real de scores do `BAAI/bge-reranker-v2-m3` (achado da Fase 4: não é garantidamente 0–1 como o Cohere Rerank que a metodologia do TCC1 assume).
+- [ ] Considerar execução concorrente de tools quando o agente pede mais de uma na mesma resposta (hoje é sequencial — ver Fase 4, Fora de Escopo).

@@ -31,6 +31,10 @@ class ChatRequest(BaseModel):
 class SourceInfo(BaseModel):
     """Informações sobre uma fonte usada na resposta."""
 
+    origin: str = Field(
+        default="rag",
+        description="Origem da fonte: 'rag' (documento normativo) ou 'professor' (corpo docente).",
+    )
     source: str
     category: str = ""
     article_id: str = ""
@@ -40,7 +44,8 @@ class SourceInfo(BaseModel):
     download_url: str = Field(
         default="",
         description="URL relativa para download do PDF original. "
-                    "Use GET {base_url}{download_url} para baixar o arquivo.",
+                    "Use GET {base_url}{download_url} para baixar o arquivo. "
+                    "Vazio para fontes que não são documentos (ex: origin='professor').",
     )
 
 
@@ -60,5 +65,9 @@ class ChatResponse(BaseModel):
     tokens: TokenUsage = Field(default_factory=TokenUsage)
     used_search: bool = Field(
         default=False,
-        description="Indica se o agente precisou buscar nos documentos",
+        description="Indica se o agente precisou acionar alguma ferramenta (RAG ou estruturada)",
+    )
+    used_tools: list[str] = Field(
+        default_factory=list,
+        description="Nomes das ferramentas acionadas nesta resposta (ex: ['search_normative_documents']).",
     )

@@ -52,6 +52,7 @@ Endpoint principal. O agente decide automaticamente quando acionar o pipeline RA
   "answer": "O trancamento de matrícula na UNIVASF é regulado pela...",
   "sources": [
     {
+      "origin": "rag",
       "source": "Resolução 08_2015 - Normas_gerais",
       "category": "Resolução PROEN",
       "article_id": "Art. 45",
@@ -65,22 +66,26 @@ Endpoint principal. O agente decide automaticamente quando acionar o pipeline RA
     "prompt": 2048,
     "completion": 116
   },
-  "used_search": true
+  "used_search": true,
+  "used_tools": ["search_normative_documents"]
 }
 ```
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
 | `answer` | string | Resposta do agente (Markdown) |
-| `sources` | array | Fontes normativas consultadas (vazio se `used_search: false`) |
+| `sources` | array | Fontes consultadas — de documentos normativos e/ou do corpo docente (vazio se `used_search: false`) |
 | `model` | string | Modelo LLM usado |
 | `tokens` | object | `{prompt, completion}` — consumo de tokens |
-| `used_search` | bool | `true` = pipeline RAG acionado, `false` = resposta direta |
+| `used_search` | bool | `true` = alguma ferramenta foi acionada (RAG e/ou corpo docente), `false` = resposta direta |
+| `used_tools` | array de string | Nomes das ferramentas acionadas nesta resposta (ex: `["search_normative_documents", "search_professors"]` — o agente pode combinar as duas na mesma pergunta) |
 
-Cada item de `sources` inclui o campo `download_url` pronto para uso:
+O agente (desde a v2, Fase 4) decide autonomamente, via *function calling* nativo da OpenAI, quais ferramentas usar — hoje: `search_normative_documents` (RAG sobre estatutos/regimentos/resoluções) e `search_professors` (consulta estruturada ao corpo docente). Cada item de `sources` tem um campo `origin` (`"rag"` ou `"professor"`) indicando de onde veio:
 
 ```json
+// origin: "rag" — inclui download_url pronto para uso
 {
+  "origin": "rag",
   "source": "Resolução 08_2015 - Normas_gerais",
   "category": "Resolução PROEN",
   "article_id": "Art. 45",
@@ -88,6 +93,18 @@ Cada item de `sources` inclui o campo `download_url` pronto para uso:
   "score": 0.8523,
   "snippet": "Art. 45. O trancamento de matrícula...",
   "download_url": "/documents/download?source=Resolu%C3%A7%C3%A3o+08_2015+-+Normas_gerais"
+}
+
+// origin: "professor" — download_url vazio (não é um documento)
+{
+  "origin": "professor",
+  "source": "Jadsonlee da Silva Sá",
+  "category": "Professor (NDE)",
+  "article_id": "",
+  "hierarchy": "",
+  "score": 0.0,
+  "snippet": "jadsonlee.sa@univasf.edu.br — Sistemas Embarcados",
+  "download_url": ""
 }
 ```
 
@@ -114,17 +131,16 @@ Versão streaming do `/chat/` via Server-Sent Events (SSE). Emite eventos progre
 |--------|--------|-----------|
 | `status` | `text` | Etapa atual do pipeline |
 | `token` | `text` | Fragmento da resposta gerada |
-| `done` | `sources`, `used_search` | Finalização — mesmo formato de `sources` do `/chat/` |
+| `done` | `sources`, `used_search`, `used_tools` | Finalização — mesmo formato de `sources`/`used_tools` do `/chat/` |
 | `error` | `text` | Mensagem de erro |
 
 ```
 data: {"type": "status", "text": "Analisando pergunta..."}
 data: {"type": "status", "text": "Buscando nos documentos normativos..."}
-data: {"type": "status", "text": "Selecionando trechos mais relevantes..."}
 data: {"type": "status", "text": "Gerando resposta..."}
 data: {"type": "token", "text": "O trancamento de matrícula "}
 data: {"type": "token", "text": "na UNIVASF é regulado..."}
-data: {"type": "done", "sources": [...], "used_search": true}
+data: {"type": "done", "sources": [...], "used_search": true, "used_tools": ["search_normative_documents"]}
 ```
 
 ```bash
