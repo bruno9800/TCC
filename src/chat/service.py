@@ -58,6 +58,20 @@ def _build_source_infos(raw_sources: list[dict]) -> list[SourceInfo]:
                     snippet=f"{src.get('email', '')} — {src.get('area') or 'área não informada'}",
                 )
             )
+        elif src.get("origin") == "discipline":
+            period = src.get("period")
+            period_label = f"{period}º período" if period else "optativa"
+            infos.append(
+                SourceInfo(
+                    origin="discipline",
+                    source=f"{src.get('name', '')} ({src.get('code', '')})",
+                    category=f"Matriz Curricular — {period_label}",
+                    snippet=(
+                        f"Carga horária: {src.get('workload', '')}h"
+                        + (f" | {src['prerequisites_text']}" if src.get("prerequisites_text") else "")
+                    ),
+                )
+            )
         else:
             source_name = src.get("source", "")
             infos.append(

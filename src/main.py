@@ -9,6 +9,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.admin.router import router as admin_router
+from src.calendar_events.router import router as calendar_events_router
 from src.chat.router import router as chat_router
 from src.documents.router import router as documents_router
 from src.logs.router import router as logs_router
@@ -36,6 +37,12 @@ app.include_router(documents_router, prefix="/documents", tags=["Documents"], de
 app.include_router(logs_router, prefix="/logs", tags=["Logs"], dependencies=[Depends(get_api_key)])
 app.include_router(
     professors_router, prefix="/professors", tags=["Professors"], dependencies=[Depends(get_api_key)]
+)
+app.include_router(
+    calendar_events_router,
+    prefix="/academic-events",
+    tags=["Academic Events"],
+    dependencies=[Depends(get_api_key)],
 )
 # Autenticação própria (JWT de AdminUser), deliberadamente separada da x-api-key pública.
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])

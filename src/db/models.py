@@ -11,7 +11,7 @@ Ver PLANO_V2.md, Seção 7.1, para a justificativa de cada tabela.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -154,6 +154,7 @@ class Professor(Base):
     personal_site_url: Mapped[str | None] = mapped_column(String(300))
     is_nde: Mapped[bool] = mapped_column(default=False)
     nde_role: Mapped[str | None] = mapped_column(String(50))  # ex: "Coordenador"; None = sem papel especial
+    degree: Mapped[str | None] = mapped_column(String(50))  # "Doutor" | "Mestre" | "Bacharel"
     bio: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -175,6 +176,7 @@ class Discipline(Base):
     code: Mapped[str | None] = mapped_column(String(20))
     period: Mapped[int | None]
     workload: Mapped[int | None]
+    prerequisites_text: Mapped[str | None] = mapped_column(String(300))  # texto livre, ex: "APC, CDI-I"
 
     course: Mapped["Course"] = relationship()
     professors: Mapped[list["ProfessorDiscipline"]] = relationship(
@@ -204,6 +206,32 @@ class ProfessorDiscipline(Base):
 
     professor: Mapped["Professor"] = relationship(back_populates="disciplines")
     discipline: Mapped["Discipline"] = relationship(back_populates="professors")
+
+
+# ── Calendário Acadêmico ─────────────────────────────────────────────────────────
+
+
+class AcademicEvent(Base):
+    """
+    Evento do calendário acadêmico — dado estruturado, consultado via Tool (SQL),
+    não via RAG. Mesma lógica de Professor/Discipline (D9): prazos exatos (ex.:
+    período de trancamento de matrícula) não devem depender de recall de
+    embedding sobre o PDF do calendário.
+    """
+
+    __tablename__ = "academic_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("courses.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(300))
+    start_date: Mapped[date]
+    end_date: Mapped[date | None]
+    category: Mapped[str | None] = mapped_column(String(100))
+    legal_reference: Mapped[str | None] = mapped_column(String(300))
+    campus: Mapped[str | None] = mapped_column(String(50))
+    academic_period: Mapped[str | None] = mapped_column(String(10))  # ex: "2026.1"
+
+    course: Mapped["Course | None"] = relationship()
 
 
 # ── Administração ────────────────────────────────────────────────────────────────

@@ -358,6 +358,18 @@ def chunk_document(
             course_id=course_id,
         )
 
+        if not article_id:
+            # Bloco sem estrutura de artigo — o preâmbulo de um documento misto
+            # (ex: as ~110 páginas de um PPC antes do capítulo de regulamentos)
+            # ou um documento inteiro sem nenhum "Art." (ex: um Manual do
+            # Aluno). Em vez de um único chunk gigante, divide por heading.
+            from src.chunking.heading_chunker import split_prose_block
+
+            prose_chunks = split_prose_block(article_text, base_metadata, max_tokens)
+            all_chunks.extend(prose_chunks)
+            logger.debug(f"  Bloco sem artigo dividido em {len(prose_chunks)} chunks (heading)")
+            continue
+
         # Verifica se precisa dividir
         tokens = count_tokens(article_text)
 

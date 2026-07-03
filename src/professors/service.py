@@ -111,8 +111,16 @@ def create_discipline(
     code: str | None = None,
     period: int | None = None,
     workload: int | None = None,
+    prerequisites_text: str | None = None,
 ) -> Discipline:
-    discipline = Discipline(course_id=course_id, name=name, code=code, period=period, workload=workload)
+    discipline = Discipline(
+        course_id=course_id,
+        name=name,
+        code=code,
+        period=period,
+        workload=workload,
+        prerequisites_text=prerequisites_text,
+    )
     db.add(discipline)
     db.commit()
     db.refresh(discipline)

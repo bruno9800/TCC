@@ -36,6 +36,7 @@ NDE_PROFESSORS = [
         name="Brauliro Gonçalves Leal",
         email="brauliro.leal@univasf.edu.br",
         email_secondary="brauliro@pesquisador.cnpq.br",
+        degree="Doutor",
         area="Modelagem Matemática e Computacional",
         lattes_url="http://lattes.cnpq.br/8388825387593034",
         personal_site_url="http://www.univasf.edu.br/~brauliro.leal",
@@ -44,6 +45,7 @@ NDE_PROFESSORS = [
     dict(
         name="Jorge Luis Cavalcanti Ramos",
         email="jorge.cavalcanti@univasf.edu.br",
+        degree="Doutor",
         area="Computação Gráfica, Matemática Discreta",
         lattes_url="http://lattes.cnpq.br/1438322656914569",
         personal_site_url="http://www.univasf.edu.br/~jorge.cavalcanti",
@@ -51,6 +53,7 @@ NDE_PROFESSORS = [
     dict(
         name="Jadsonlee da Silva Sá",
         email="jadsonlee.sa@univasf.edu.br",
+        degree="Doutor",
         area="Sistemas Embarcados",
         lattes_url="http://lattes.cnpq.br/2010145273028144",
         personal_site_url="http://www.univasf.edu.br/~jadsonlee.sa",
@@ -58,6 +61,7 @@ NDE_PROFESSORS = [
     dict(
         name="Jairson Barbosa Rodrigues",
         email="jairson.rodrigues@univasf.edu.br",
+        degree="Doutor",
         area="Sistemas Operacionais, Sistemas Distribuídos, Criptografia",
         lattes_url="http://lattes.cnpq.br/0036738410783279",
         personal_site_url="http://www.univasf.edu.br/~jairson.rodrigues",
@@ -65,6 +69,7 @@ NDE_PROFESSORS = [
     dict(
         name="Juracy Emanuel Magalhães da Franca",
         email="juracy.emanuel@univasf.edu.br",
+        degree="Mestre",
         area="Automação, Robótica",
         lattes_url="http://lattes.cnpq.br/4900473312230462",
         personal_site_url="http://www.univasf.edu.br/~juracy.emanuel",
@@ -72,6 +77,7 @@ NDE_PROFESSORS = [
     dict(
         name="Marcus Vinícius Midena Ramos",
         email="marcus.ramos@univasf.edu.br",
+        degree="Doutor",
         area="Teoria da Computação",
         lattes_url="http://lattes.cnpq.br/7833733286842741",
         personal_site_url="http://www.univasf.edu.br/~marcus.ramos",
@@ -79,6 +85,7 @@ NDE_PROFESSORS = [
     dict(
         name="Rafael Moura Duarte",
         email="rafael.mouraduarte@univasf.edu.br",
+        degree="Doutor",
         area="Processamento de Sinais, Sistemas Eletrônicos e Inteligência Artificial",
         lattes_url="https://lattes.cnpq.br/9518314608063013",
         personal_site_url=None,
@@ -90,6 +97,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Ana Emília de Melo Queiroz",
         email="ana.queiroz@univasf.edu.br",
+        degree="Doutora",
         area="Algoritmos, Estruturas de Dados",
         lattes_url="http://lattes.cnpq.br/2923710960629772",
         personal_site_url="http://www.univasf.edu.br/~ana.queiroz",
@@ -97,6 +105,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Ana Júlia Fernandes de Oliveira Barros",
         email="anajulia.oliveira@univasf.edu.br",
+        degree="Doutora",
         area="Telecomunicações",
         lattes_url=None,  # não disponível na fonte
         personal_site_url="http://www.univasf.edu.br/~anajulia.oliveira",
@@ -104,6 +113,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Fábio Nelson de Sousa Pereira",
         email="fabio.nelson@univasf.edu.br",
+        degree="Mestre",
         area="Sistemas Embarcados, Redes de Sensores sem Fio",
         lattes_url="http://lattes.cnpq.br/3855845313174474",
         personal_site_url="http://www.univasf.edu.br/~fabio.nelson",
@@ -111,6 +121,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Marcelo Santos Linder",
         email="marcelo.linder@univasf.edu.br",
+        degree="Mestre",
         area="Linguagens e Programação e Algoritmos",
         lattes_url="http://lattes.cnpq.br/0118309756941390",
         personal_site_url="http://www.univasf.edu.br/~marcelo.linder",
@@ -118,6 +129,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Mario Godoy Neto",
         email="mario.godoy@univasf.edu.br",
+        degree="Doutor",
         area="Bancos de Dados",
         lattes_url="http://lattes.cnpq.br/6381727641321786",
         personal_site_url="http://www.univasf.edu.br/~mario.godoy",
@@ -125,6 +137,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Max Santana Rolemberg Farias",
         email="max.santana@univasf.edu.br",
+        degree="Doutor",
         area="Redes de Computadores",
         lattes_url="http://lattes.cnpq.br/9688352609644792",
         personal_site_url="http://www.univasf.edu.br/~max.santana",
@@ -132,6 +145,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Ricardo Argenton Ramos",
         email="ricardo.aramos@univasf.edu.br",
+        degree="Doutor",
         area="Engenharia de Software",
         lattes_url="http://lattes.cnpq.br/6190953685221120",
         personal_site_url="http://www.univasf.edu.br/~ricardo.aramos",
@@ -139,6 +153,7 @@ OTHER_PROFESSORS = [
     dict(
         name="Rosalvo Ferreira de Oliveira Neto",
         email="rosalvo.oliveira@univasf.edu.br",
+        degree="Doutor",
         area="Inteligência Artificial, Mineração de Dados",
         lattes_url="http://lattes.cnpq.br/9548186939653024",
         personal_site_url="http://www.univasf.edu.br/~rosalvo.oliveira",
@@ -149,7 +164,13 @@ OTHER_PROFESSORS = [
 def seed_professor(session, data: dict, course_id: int, is_nde: bool) -> None:
     existing = session.query(Professor).filter_by(email=data["email"]).one_or_none()
     if existing:
-        logger.info(f"  Já existe: {data['name']} ({data['email']})")
+        # Já existe (criado antes do campo `degree` existir, Fase 3) — só
+        # sincroniza o novo campo, sem recriar nem sobrescrever o resto.
+        if data.get("degree") and existing.degree != data["degree"]:
+            existing.degree = data["degree"]
+            logger.info(f"  Atualizado (degree): {data['name']} → {data['degree']}")
+        else:
+            logger.info(f"  Já existe: {data['name']} ({data['email']})")
         return
 
     professor = Professor(
@@ -161,6 +182,7 @@ def seed_professor(session, data: dict, course_id: int, is_nde: bool) -> None:
         area=data.get("area"),
         lattes_url=data.get("lattes_url"),
         personal_site_url=data.get("personal_site_url"),
+        degree=data.get("degree"),
         is_nde=is_nde,
         nde_role=data.get("nde_role"),
     )

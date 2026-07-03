@@ -15,6 +15,9 @@ from sqlalchemy.orm import Session
 
 from src.admin.auth import create_access_token, get_current_admin, verify_password
 from src.admin.schemas import (
+    AcademicEventCreateRequest,
+    AcademicEventOut,
+    AcademicEventUpdateRequest,
     DisciplineCreateRequest,
     DisciplineOut,
     DocumentOut,
@@ -26,6 +29,7 @@ from src.admin.schemas import (
     ProfessorUpdateRequest,
     TokenResponse,
 )
+from src.calendar_events import service as calendar_service
 from src.db.models import AdminUser
 from src.db.session import get_db
 from src.documents import service as document_service
@@ -279,3 +283,82 @@ async def list_disciplines(
     db: Session = Depends(get_db),
 ) -> list[DisciplineOut]:
     return professor_service.list_disciplines(db, course_id=course_id)
+
+
+# ── Calendário Acadêmico ───────────────────────────────────────────────────
+
+
+@router.post(
+    "/academic-events",
+    response_model=AcademicEventOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastra um evento do calendário acadêmico",
+)
+async def create_event(
+    payload: AcademicEventCreateRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AcademicEventOut:
+    return calendar_service.create_event(db, **payload.model_dump())
+
+
+@router.get(
+    "/academic-events", response_model=list[AcademicEventOut], summary="Lista eventos do calendário"
+)
+async def list_events(
+    course_id: int | None = None,
+    category: str | None = None,
+    academic_period: str | None = None,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> list[AcademicEventOut]:
+    return calendar_service.list_events(
+        db, course_id=course_id, category=category, academic_period=academic_period
+    )
+
+
+@router.get(
+    "/academic-events/{event_id}", response_model=AcademicEventOut, summary="Detalhe de um evento"
+)
+async def get_event(
+    event_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AcademicEventOut:
+    event = calendar_service.get_event(db, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evento não encontrado")
+    return event
+
+
+@router.patch(
+    "/academic-events/{event_id}", response_model=AcademicEventOut, summary="Atualiza um evento"
+)
+async def update_event(
+    event_id: int,
+    payload: AcademicEventUpdateRequest,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AcademicEventOut:
+    try:
+        return calendar_service.update_event(
+            db, event_id, **payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete(
+    "/academic-events/{event_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove um evento",
+)
+async def delete_event(
+    event_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        calendar_service.delete_event(db, event_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

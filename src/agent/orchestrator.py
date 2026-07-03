@@ -28,7 +28,7 @@ from collections.abc import Generator
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from src.agent.tools import professor_tool, rag_tool
+from src.agent.tools import discipline_tool, professor_tool, rag_tool
 from src.config import LLM_MODEL, OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,14 @@ logger = logging.getLogger(__name__)
 TOOLS = {
     rag_tool.NAME: rag_tool,
     professor_tool.NAME: professor_tool,
+    discipline_tool.NAME: discipline_tool,
 }
-TOOL_SCHEMAS = [rag_tool.SCHEMA, professor_tool.SCHEMA]
+TOOL_SCHEMAS = [rag_tool.SCHEMA, professor_tool.SCHEMA, discipline_tool.SCHEMA]
 
 STATUS_MESSAGES = {
     rag_tool.NAME: "Buscando nos documentos normativos...",
     professor_tool.NAME: "Consultando o corpo docente...",
+    discipline_tool.NAME: "Consultando a matriz curricular...",
 }
 
 SYSTEM_PROMPT = """\
@@ -49,13 +51,19 @@ Você é o Assistente Acadêmico da UNIVASF (Universidade Federal do Vale do Sã
 
 ## Ferramentas disponíveis:
 - search_normative_documents: busca em estatutos, regimentos e resoluções oficiais da \
-UNIVASF. Use para perguntas sobre normas, regras, prazos, direitos ou procedimentos \
-acadêmicos.
+UNIVASF (inclui o PPC do curso). Use para perguntas sobre normas, regras, prazos, \
+direitos ou procedimentos acadêmicos — inclusive o conteúdo narrativo do PPC (perfil \
+do egresso, objetivos, infraestrutura, ementas de disciplinas).
 - search_professors: consulta o corpo docente (nome, e-mail, área de atuação, Lattes, \
 participação no NDE). Use para perguntas sobre professores específicos ou sobre quem \
 atua em determinada área/disciplina.
+- search_disciplines: consulta a matriz curricular oficial (período, carga horária, \
+pré-requisitos/co-requisitos exatos). Use SEMPRE que a pergunta envolver em que \
+período fica uma disciplina, quais os pré-requisitos, ou carga horária — não tente \
+responder isso só com search_normative_documents, pois o texto em prosa do PPC não \
+garante precisão nesses fatos exatos.
 
-Você pode usar as duas ferramentas na mesma pergunta quando fizer sentido (ex: uma \
+Você pode usar mais de uma ferramenta na mesma pergunta quando fizer sentido (ex: uma \
 pergunta que envolve tanto uma norma quanto quem a aplica).
 
 ## Quando NÃO usar nenhuma ferramenta:

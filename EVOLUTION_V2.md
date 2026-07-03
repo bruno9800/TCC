@@ -85,7 +85,8 @@ Isso é um bug real e pré-existente da v1, não introduzido pela v2 — descobe
 | 2 | API administrativa de documentos (upload, reindex, auth de admin) | ✅ Concluída |
 | 3 | Corpo docente (dados estruturados + Tool) | ✅ Concluída (dados/CRUD — Tool é Fase 4) |
 | 4 | Orquestração multi-tool (function calling nativo) | ✅ Concluída |
-| 5 | Expansão de conteúdo (Manual do Aluno etc.) | 🔜 Próxima |
+| 5a | PPC real (RAG + matriz curricular estruturada) | ✅ Concluída |
+| 5b | Calendário Acadêmico (dado estruturado + Tool) | 🔜 Próxima |
 | 6 | Escopo por curso | ⏳ Pendente |
 | 7 | Calendário acadêmico (condicional) | ⏳ Pendente |
 | 8 | Observabilidade admin (opcional) | ⏳ Pendente |
@@ -278,13 +279,49 @@ Esta fase é o núcleo da seção de **Arquitetura do Agente** do TCC II — é 
 
 ---
 
+## Fase 5a — PPC Real: Conteúdo Textual (RAG) + Matriz Curricular (Estruturada)
+
+**Status:** ✅ Concluída e verificada — 2026-07-03
+
+**Objetivo:** ingerir o PPC real (144 páginas) e o corpo docente/matriz curricular oficiais da UNIVASF, resolvendo um problema de arquitetura que o v1 não tinha enfrentado: um documento que mistura texto normativo estruturado por artigo com prosa narrativa.
+
+### Mudança de plano durante a discussão
+
+O plano inicial dividia manualmente o PPC em 6 PDFs (4 normativos + 2 de prosa) antes do upload. O usuário questionou isso corretamente: "existem muitas páginas que não se enquadram nesse formato de chunking, e o Manual do Aluno também, além de no futuro surgir a necessidade de adicionar mais documentos gerais pela plataforma admin" — ou seja, a divisão manual resolveria o PPC de hoje mas não generaliza para nenhum documento futuro. Redesenhei para que a decisão de chunking (legal vs. heading) aconteça **por bloco, dentro de `legal_chunker.chunk_document()`**, não por documento inteiro.
+
+### O que foi feito
+
+- `src/chunking/heading_chunker.py` (novo): `split_prose_block()` — divide por headings Markdown, sub-divide por parágrafo se uma seção exceder `MAX_CHUNK_TOKENS`.
+- `src/chunking/legal_chunker.py::chunk_document()`: quando um bloco não começa com "Art. X", chama `heading_chunker.split_prose_block()` em vez de criar um único chunk gigante. `src/ingestion/service.py` não mudou — a decisão fica encapsulada onde já fazia sentido.
+- **Upload do PPC completo (144 páginas) como um único documento**, via `POST /admin/documents` (Fase 2, zero código novo) — `course_id=1` (ENGCOMP), `knowledge_base_slug=regulamentos`. Resultado: 375 chunks — 128 com `article_id` (Cap. 6, Documentos Normativos: Regulamento do Colegiado, Curricularização de Extensão, Estágio, TCC) e 247 sem (Identificação, Estrutura Curricular narrativa, Ementário, Infraestrutura), roteados automaticamente para o chunker certo.
+- `scripts/seed_disciplines_engcomp.py` (novo): 81 disciplinas da matriz curricular real (63 dos 10 períodos + 18 optativas), com sigla, período, carga horária e `prerequisites_text` (texto livre) — via `ProfessorService.create_discipline` (Fase 3).
+- `Professor.degree` (novo campo, migration) + `Discipline.prerequisites_text` (novo campo, mesma migration): `degree` sincronizado nos 15 professores já existentes (12 Doutor(a) + 3 Mestre, confirma exatamente a Tabela 5.3 do PPC) sem recriar registros.
+
+### Achado real durante a verificação — e uma tool nova não planejada originalmente
+
+Testando "em que período fica Compiladores e quais os pré-requisitos?" **usando só RAG**, o agente respondeu período correto (7º) mas **pré-requisitos errados**: "Teoria da Computação e Estruturas de Dados" em vez de "AED, LFA e OAC" (a matriz curricular real). Isso é exatamente o padrão que já resolvi para professores (D9): fato exato não deveria depender de recall de embedding sobre prosa. Adicionei `src/agent/tools/discipline_tool.py` (`search_disciplines`, wrap fino sobre `list_disciplines` — já existia desde a Fase 3, zero lógica nova) e registrei no orchestrator junto com `RagTool`/`ProfessorTool`. Reperguntado com a tool disponível: resposta correta ("AED, LFA e OAC"), **e mais rápida** (3,9s vs. ~17s do caminho via RAG+HyDE+rerank) — o SQL exato venceu em precisão e em latência.
+
+`SourceInfo.origin` ganhou um terceiro valor (`"discipline"`, aditivo) e `_build_source_infos` em `chat/service.py` foi estendido para esse caso.
+
+### Verificação realizada
+
+Teste isolado de roteamento por bloco com texto sintético misto (confirmado antes de tocar no PPC real); upload do PPC completo confirmado com a mistura esperada de chunks (128 legal / 247 heading); seed de disciplinas rodado 2x (81 criadas, depois 0 — idempotência); `degree` sincronizado e conferido via SQL (12 Doutor(a) + 3 Mestre = 15, bate com a Tabela 5.3); perguntas reais via `/chat/` sobre conteúdo de prosa do PPC (duração/carga horária do curso — resposta correta, citando `origin="rag"` com `hierarchy="4.1 Organização do Currículo"`) e sobre o Regulamento do TCC do PPC (banca examinadora — `Art. 24`, `source="PPC - Engenharia de Computação"`, distinguível de outras normas do corpus); achado e corrigido o caso de pré-requisitos incorretos, com nova tool testada e confirmando resposta exata.
+
+**Nota operacional:** durante a verificação, duas chamadas consecutivas de chat com timeout de cliente (curl) deixaram requisições órfãs concorrendo por CPU no processo do servidor (o `CrossEncoder` do reranker é compartilhado e não é thread-safe para uso concorrente pesado), causando lentidão aparente de "travamento". Reiniciar o processo resolveu — não é um bug do código desta fase, mas um lembrete de que testes de carga/concorrência do reranker ficam como item para investigar se o volume de uso real crescer.
+
+### Nota para a escrita do TCC II
+
+O achado do `DisciplineTool` é talvez o exemplo mais didático do projeto inteiro para a seção de **Resultados/Discussão**: uma alucinação parcial real, capturada ao vivo durante o desenvolvimento, com causa raiz identificada (fato exato dependendo de RAG) e correção que já tinha precedente arquitetural (D9) — e a correção melhorou precisão E latência simultaneamente. É uma demonstração concreta de por que a arquitetura "RAG para prosa, SQL para fatos exatos" (`PLANO_V2.md`, Seção 5) não é só uma preferência teórica.
+
+---
+
 ## Itens Pendentes / Próximos Passos
 
 > Atualizar ao final de cada fase.
 
-- [ ] Fase 5 (expansão de conteúdo): Manual do Aluno, importação do PPC estruturado (alimentaria `Discipline`/`ProfessorDiscipline` com dado curricular preciso — períodos, códigos, ofertas por semestre).
+- [ ] Planejar e implementar Fase 5b (Calendário Acadêmico): `AcademicEvent`, `CalendarTool` — puxa a Fase 7 do roadmap original pra agora, dado real já disponível (calendário 2026 já lido nesta conversa).
 - [ ] Fase 6 (escopo por curso): expor `course_id` em `ChatRequest`, filtro `$or` no retrieval, `GET /courses`.
 - [ ] Refinar `ProfessorTool` para aceitar `nde_role`/`is_nde` como parâmetro de busca (achado da Fase 4).
 - [ ] Decidir o comportamento de `revoked` em reindex de documentos (achado da Fase 2) quando o painel admin existir.
 - [ ] Ativar `score_threshold` no reranker (D3 do diagnóstico) — pendente de calibração empírica contra a distribuição real de scores do `BAAI/bge-reranker-v2-m3` (achado da Fase 4: não é garantidamente 0–1 como o Cohere Rerank que a metodologia do TCC1 assume).
-- [ ] Considerar execução concorrente de tools quando o agente pede mais de uma na mesma resposta (hoje é sequencial — ver Fase 4, Fora de Escopo).
+- [ ] Considerar execução concorrente de tools quando o agente pede mais de uma na mesma resposta (hoje é sequencial — ver Fase 4, Fora de Escopo). O achado operacional da Fase 5a (contenção do reranker sob requisições concorrentes/órfãs) reforça que isso vale investigar se o volume de uso crescer.

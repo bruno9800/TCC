@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,6 +61,7 @@ class DisciplineOut(BaseModel):
     code: str | None
     period: int | None
     workload: int | None
+    prerequisites_text: str | None
 
 
 class DisciplineCreateRequest(BaseModel):
@@ -69,6 +70,7 @@ class DisciplineCreateRequest(BaseModel):
     code: str | None = None
     period: int | None = None
     workload: int | None = None
+    prerequisites_text: str | None = None
 
 
 class ProfessorDisciplineOut(BaseModel):
@@ -136,3 +138,44 @@ class ProfessorUpdateRequest(BaseModel):
     is_nde: bool | None = None
     nde_role: str | None = None
     bio: str | None = None
+
+
+# ── Calendário Acadêmico ────────────────────────────────────────────────────
+
+
+class AcademicEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    course_id: int | None
+    title: str
+    start_date: date
+    end_date: date | None
+    category: str | None
+    legal_reference: str | None
+    campus: str | None
+    academic_period: str | None
+
+
+class AcademicEventCreateRequest(BaseModel):
+    title: str
+    start_date: date
+    end_date: date | None = None
+    course_id: int | None = None
+    category: str | None = None
+    legal_reference: str | None = None
+    campus: str | None = None
+    academic_period: str | None = None
+
+
+class AcademicEventUpdateRequest(BaseModel):
+    """Payload de PATCH /admin/academic-events/{id} — todos os campos opcionais."""
+
+    title: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    course_id: int | None = None
+    category: str | None = None
+    legal_reference: str | None = None
+    campus: str | None = None
+    academic_period: str | None = None
