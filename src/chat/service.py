@@ -18,7 +18,7 @@ from collections.abc import Generator
 from openai import OpenAI
 
 from src.config import LLM_MODEL, OPENAI_API_KEY
-from src.retrieval.hybrid_search import HybridSearchEngine
+from src.retrieval.hybrid_search import get_search_engine
 from src.retrieval.reranker import rerank
 from src.generation.generator import build_context
 from src.chat.schemas import (
@@ -34,19 +34,10 @@ from src.indexing.vector_store import generate_embeddings
 logger = logging.getLogger(__name__)
 
 # ── Singletons ─────────────────────────────────────────────────────────────────
+# get_search_engine() vive em src/retrieval/hybrid_search.py — reexportado aqui
+# via import para não quebrar quem já importava daqui.
 
-_search_engine: HybridSearchEngine | None = None
 _openai_client: OpenAI | None = None
-
-
-def get_search_engine() -> HybridSearchEngine:
-    """Retorna instância singleton do motor de busca."""
-    global _search_engine
-    if _search_engine is None:
-        logger.info("Inicializando HybridSearchEngine...")
-        _search_engine = HybridSearchEngine()
-        logger.info(f"HybridSearchEngine carregado com {len(_search_engine.chunks)} chunks.")
-    return _search_engine
 
 
 def get_openai_client() -> OpenAI:

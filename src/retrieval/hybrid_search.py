@@ -65,6 +65,24 @@ class HybridSearchEngine:
         self.bm25 = BM25Okapi(self.corpus_tokens)
         logger.info(f"Índice BM25 construído com {len(self.chunks)} documentos")
 
+    def reload(self) -> None:
+        """
+        Recarrega os chunks do disco e reconstrói o índice BM25.
+
+        A busca densa consulta o ChromaDB ao vivo a cada chamada, mas o BM25
+        é um snapshot em memória montado na inicialização — sem isso, chunks
+        adicionados/atualizados por uma ingestão só apareceriam na busca
+        esparsa depois de reiniciar o processo. Chamado pelo IngestionService
+        ao final de uma indexação bem-sucedida (ver src/ingestion/service.py).
+        """
+        self.chunks = load_all_chunks()
+        if self.chunks:
+            self._build_bm25_index()
+        else:
+            self.bm25 = None
+            self.corpus_tokens = None
+        logger.info(f"HybridSearchEngine recarregado: {len(self.chunks)} chunks.")
+
     def search_dense(
         self,
         query: str,
@@ -215,3 +233,21 @@ class HybridSearchEngine:
             )
             for item in sorted_results
         ]
+
+
+# ── Singleton ──────────────────────────────────────────────────────────────────
+# Vive aqui (não em src/chat/service.py) porque é sobre o motor de recuperação,
+# não sobre orquestração de chat — evita que src/ingestion/ precise depender de
+# src/chat/ apenas para invalidar o cache do BM25 após uma indexação.
+
+_search_engine: HybridSearchEngine | None = None
+
+
+def get_search_engine() -> HybridSearchEngine:
+    """Retorna instância singleton do motor de busca."""
+    global _search_engine
+    if _search_engine is None:
+        logger.info("Inicializando HybridSearchEngine...")
+        _search_engine = HybridSearchEngine()
+        logger.info(f"HybridSearchEngine carregado com {len(_search_engine.chunks)} chunks.")
+    return _search_engine

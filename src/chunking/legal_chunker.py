@@ -67,6 +67,8 @@ class ChunkMetadata:
     chunk_index: int = 0
     is_child_chunk: bool = False
     parent_article: str = ""
+    kb_slug: str = "regulamentos"
+    course_id: int | None = None
 
 
 @dataclass
@@ -262,6 +264,8 @@ def split_long_chunk(
                         chunk_index=chunk_idx,
                         is_child_chunk=True if chunk_idx > 0 else False,
                         parent_article=metadata.article_id,
+                        kb_slug=metadata.kb_slug,
+                        course_id=metadata.course_id,
                     ),
                 )
             )
@@ -293,6 +297,8 @@ def split_long_chunk(
                     chunk_index=chunk_idx,
                     is_child_chunk=True if chunk_idx > 0 else False,
                     parent_article=metadata.article_id,
+                    kb_slug=metadata.kb_slug,
+                    course_id=metadata.course_id,
                 ),
             )
         )
@@ -306,6 +312,8 @@ def chunk_document(
     category: str,
     status: str = "vigente",
     max_tokens: int = MAX_CHUNK_TOKENS,
+    kb_slug: str = "regulamentos",
+    course_id: int | None = None,
 ) -> list[LegalChunk]:
     """
     Aplica chunking semântico-hierárquico a um documento Markdown.
@@ -322,6 +330,9 @@ def chunk_document(
         category: Categoria do documento (ex: "Resolução PROEN").
         status: Status de vigência ("vigente" ou "revogado").
         max_tokens: Limite máximo de tokens por chunk.
+        kb_slug: Slug da base de conhecimento (ver src/db/models.py KnowledgeBase).
+        course_id: Curso ao qual o documento pertence — None = institucional
+            (aplica-se a todos os cursos).
 
     Returns:
         Lista de LegalChunk prontos para indexação.
@@ -343,6 +354,8 @@ def chunk_document(
             category=category,
             status=status,
             article_id=article_id,
+            kb_slug=kb_slug,
+            course_id=course_id,
         )
 
         # Verifica se precisa dividir
