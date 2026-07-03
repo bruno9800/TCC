@@ -10,8 +10,11 @@ services:
     environment:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-univasf}:${POSTGRES_PASSWORD:-univasf}@postgres:5432/${POSTGRES_DB:-univasf}
     depends_on:
       chromadb:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - app-network
@@ -34,6 +37,26 @@ services:
     networks:
       - app-network
 
+  # ── PostgreSQL (Banco Relacional — cursos, documentos, professores) ────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: univasf-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-univasf}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-univasf}
+      - POSTGRES_DB=${POSTGRES_DB:-univasf}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-univasf}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
   # ── Cloudflare Tunnel (Exposição Segura) ───────────────────────────────────
   tunnel:
     image: cloudflare/cloudflared:latest
@@ -49,6 +72,8 @@ services:
 
 volumes:
   chroma_data:
+    driver: local
+  postgres_data:
     driver: local
 
 networks:

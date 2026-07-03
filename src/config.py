@@ -24,6 +24,12 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 TCC_API_KEY = os.getenv("TCC_API_KEY", "")
 
+# ── Banco de Dados Relacional ─────────────────────────────────────────────────
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg2://univasf:univasf@localhost:5432/univasf",
+)
+
 
 
 # ── Models ─────────────────────────────────────────────────────────────────────
