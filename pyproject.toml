@@ -32,6 +32,10 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
     "psycopg2-binary>=2.9.9",
+    # Admin Auth
+    "pyjwt>=2.8.0",
+    "bcrypt>=4.1.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

@@ -1,10 +1,14 @@
 """Configurações centralizadas do sistema RAG."""
 
+import logging
 import os
+import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -13,12 +17,14 @@ MARKDOWN_DIR = PROJECT_ROOT / "data" / "markdown"
 CHUNKS_DIR = PROJECT_ROOT / "data" / "chunks"
 VECTORSTORE_DIR = PROJECT_ROOT / "data" / "vectorstore"
 LOGS_DIR = PROJECT_ROOT / "data" / "logs"
+RAW_DOCS_DIR = PROJECT_ROOT / "data" / "raw"
 
 # Ensure data directories exist
 MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 VECTORSTORE_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+RAW_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── API Keys ───────────────────────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -29,6 +35,20 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg2://univasf:univasf@localhost:5432/univasf",
 )
+
+# ── Autenticação de Administrador (JWT) ────────────────────────────────────────
+# Separada da TCC_API_KEY pública (chat/documents/logs) — protege /admin/*.
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
+
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+if not JWT_SECRET:
+    JWT_SECRET = secrets.token_urlsafe(32)
+    logger.warning(
+        "JWT_SECRET não configurada — usando um segredo aleatório gerado em memória. "
+        "Sessões de administrador não sobrevivem a um restart do processo. "
+        "Defina JWT_SECRET no .env para sessões persistentes."
+    )
 
 
 

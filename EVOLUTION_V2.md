@@ -82,8 +82,8 @@ Isso é um bug real e pré-existente da v1, não introduzido pela v2 — descobe
 |---|---|---|
 | 0 | Fundação de dados (Postgres + SQLAlchemy + Alembic) | ✅ Concluída |
 | 1 | Refatoração da ingestão (`IngestionService`, corrige staleness do BM25 e chunks órfãos) | ✅ Concluída |
-| 2 | API administrativa de documentos (upload, reindex, auth de admin) | 🔜 Próxima |
-| 3 | Corpo docente (dados estruturados + Tool) | ⏳ Pendente |
+| 2 | API administrativa de documentos (upload, reindex, auth de admin) | ✅ Concluída |
+| 3 | Corpo docente (dados estruturados + Tool) | 🔜 Próxima |
 | 4 | Orquestração multi-tool (function calling nativo) | ⏳ Pendente |
 | 5 | Expansão de conteúdo (Manual do Aluno etc.) | ⏳ Pendente |
 | 6 | Escopo por curso | ⏳ Pendente |
@@ -164,9 +164,58 @@ O achado do vectorstore corrompido e a decisão de migrar o corpus inteiro (em v
 
 ---
 
+## Fase 2 — API Administrativa de Documentos
+
+**Status:** ✅ Concluída e verificada — 2026-07-03
+
+**Objetivo:** expor a infraestrutura das Fases 0/1 via HTTP — upload, listagem, atualização, remoção e reindexação de documentos — protegida por autenticação de administrador (JWT), deliberadamente separada da `x-api-key` pública que já protege `/chat`, `/documents`, `/logs`.
+
+### O que foi feito
+
+- `src/admin/` (novo módulo): `auth.py` (hash/verificação de senha via `bcrypt`, `create_access_token`, `get_current_admin` — dependência FastAPI via `HTTPBearer`, espelhando o padrão `Security`/`Depends` já usado em `src/auth.py`), `schemas.py`, `router.py` (`POST /admin/auth/login` + CRUD de documentos).
+- `src/documents/service.py` (novo — `DocumentService`): `create_document` (salva o arquivo em `data/raw/{id}/`, dispara `IngestionService.process_document` da Fase 1 — se a ingestão falhar, o documento fica com `status="failed"` mas o upload em si não retorna erro), `list_documents`, `get_document`, `update_document` (semântica PATCH via `exclude_unset`), `reindex_document`, `delete_document`.
+- `src/documents/router.py`: `GET /documents/list` e `GET /documents/download` passaram a resolver contra o banco (`Document.title`/`storage_path`) em vez de varrer `regimentos_estatutos_resolucoes/` — sem isso, documentos enviados pela nova API (armazenados em `data/raw/`) nunca apareceriam nesses endpoints públicos.
+- `scripts/create_admin.py` — bootstrap do primeiro `AdminUser`.
+- `JWT_SECRET`, `JWT_EXPIRE_MINUTES`, `RAW_DOCS_DIR` em `src/config.py` — mesmo padrão de fallback seguro já usado na Fase 0/1 (se `JWT_SECRET` não estiver definida, gera uma aleatória em memória com aviso no log, em vez de usar um segredo previsível).
+
+### Decisões de Arquitetura
+
+#### D18 — Upload síncrono dentro do request (sem fila assíncrona)
+
+**Decisão:** `POST /admin/documents` roda o pipeline completo (ETL→chunk→embed→index) antes de responder — sem Celery/RQ/background job.
+
+**Justificativa:** já prevista em `PLANO_V2.md` §7.4 para o volume atual do projeto (dezenas de documentos, não milhares). Introduzir uma fila agora seria infraestrutura sem necessidade comprovada. Se o tempo de resposta do upload se tornar um problema real (documentos muito grandes), essa decisão é revisável isoladamente sem afetar o resto da arquitetura.
+
+#### D19 — Falha de ingestão não derruba o upload (HTTP 201 mesmo com `status="failed"`)
+
+**Decisão:** se `process_document` lançar exceção durante um upload ou reindex, `DocumentService` captura, loga, e retorna o documento normalmente (com `status="failed"`, e o erro registrado em `IngestionJob` pela Fase 1).
+
+**Justificativa:** o upload (criar o registro + salvar o arquivo) e a ingestão (processá-lo) são semanticamente operações diferentes — a primeira teve sucesso mesmo se a segunda falhar. Isso também torna o `status` do `Document` a fonte confiável de verdade sobre "este documento está pesquisável?", em vez de depender do código de status HTTP da requisição de upload.
+
+### Bugs encontrados e corrigidos durante a verificação
+
+1. **`DELETE /admin/documents/{id}` falhava com 500** (`IntegrityError: violates foreign key constraint "ingestion_jobs_document_id_fkey"`). Causa: `IngestionJob` tem uma FK para `Document` mas, ao contrário de `DocumentChunk`, não tem uma `relationship(..., cascade="all, delete-orphan")` configurada em `Document` — o ORM não sabia que precisava apagar essas linhas antes de deletar o documento. Corrigido em `src/documents/service.py`: `delete_document()` agora apaga explicitamente as linhas de `IngestionJob` daquele documento antes do `db.delete(document)`. Encontrado ao testar o fluxo de exclusão de ponta a ponta — a primeira tentativa de `DELETE` já tinha removido os vetores do ChromaDB, o arquivo físico e o JSONL antes de falhar no banco, deixando o `Document` "zumbi" (visível no banco, mas sem conteúdo pesquisável) até a correção e uma segunda tentativa.
+2. **Diretório vazio `data/raw/{id}/` ficava para trás após a exclusão** — `delete_document()` só apagava o arquivo, não o diretório pai. Corrigido: tenta `rmdir()` do diretório pai após apagar o arquivo (`except OSError: pass` se não estiver vazio ou já não existir).
+
+### Achado de comportamento (não corrigido — registrado para decisão futura)
+
+Ao reindexar um documento (`POST /admin/documents/{id}/reindex`), `etl_and_chunk` (Fase 1) roda a detecção automática de revogação (`revocation_filter.analyze_revocation`, baseada no nome do arquivo) e **sobrescreve** qualquer marcação manual de `revoked`/`revoked_reason` feita via `PATCH` antes do reindex. Percebido ao testar a sequência PATCH (marcar `revoked=true` manualmente) → reindex (voltou para `revoked=false`). Não é necessariamente um bug — pode ser o comportamento correto (a detecção automática deveria ser re-derivada do documento fonte a cada reindex) ou pode ser indesejado (um admin que sabe que uma norma foi revogada por um motivo que o nome do arquivo não capta perderia essa marcação). Fica como decisão de produto para quando o painel administrativo (frontend) existir e esse fluxo for usado de verdade — não bloqueia nada hoje.
+
+### Verificação realizada
+
+Sequência completa contra a API real (Postgres + ChromaDB via Docker): criação do primeiro `AdminUser`; login (sucesso, senha errada → 401, rota sem token → 401); upload multipart de um PDF pequeno já existente no corpus (`ON 02_2016.pdf`, reaproveitado só como payload de teste) → `201`, `status="indexed"`, 31 `DocumentChunk`s, vetores no ChromaDB; pergunta real via `POST /chat/` recuperou o documento de teste como fonte principal (score 0.999) com citação correta; `GET`/`PATCH` confirmados; `POST /reindex` confirmado (`version` 1→2, mesma contagem de chunks, sem duplicar vetores — 1248 = 1217 + 31 antes e depois); `GET /documents/list` e `GET /documents/download` públicos refletindo o documento de teste (inclusive após renomear via PATCH); `DELETE` confirmado limpando ChromaDB, arquivo físico, diretório, JSONL e as três tabelas (`documents`, `document_chunks`, `ingestion_jobs`) — corpus de volta a exatamente 48 documentos e 1217 chunks no BM25/ChromaDB.
+
+### Nota para a escrita do TCC II
+
+O bug do `DELETE` é um bom exemplo para a seção de **Discussão/Limitações**: modelar uma tabela nova (`IngestionJob`, Fase 0) sem uma relação ORM completa é um erro fácil de cometer e fácil de não notar até que o caminho de código que a exercita (exclusão) seja realmente testado — reforça o valor de testes de ponta a ponta reais (não só sanity import) antes de considerar uma fase concluída, e é uma evidência concreta a favor da metodologia adotada neste projeto (verificar cada fase contra o sistema rodando de verdade, não só ler o código).
+
+---
+
 ## Itens Pendentes / Próximos Passos
 
 > Atualizar ao final de cada fase.
 
-- [ ] Planejar e implementar Fase 2 (API administrativa de documentos): upload, reindex via HTTP, auth de `AdminUser`.
+- [ ] Planejar e implementar Fase 3 (Corpo Docente): `Professor`/`Discipline`/`ProfessorDiscipline`, endpoints admin + `GET /professors` público.
+- [ ] Planejar e implementar Fase 4 (Orquestração multi-tool): substituir a decisão binária de `chat/service.py` por function calling nativo, eliminando a duplicação `run_chat`/`stream_chat` (D4) e resolvendo D5.
+- [ ] Decidir o comportamento de `revoked` em reindex (achado acima) quando o painel admin existir.
 - [ ] Ativar `score_threshold` no reranker (D3 do diagnóstico) — correção pontual, pode ser feita a qualquer momento, independente das fases.
