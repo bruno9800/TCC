@@ -86,9 +86,9 @@ Isso é um bug real e pré-existente da v1, não introduzido pela v2 — descobe
 | 3 | Corpo docente (dados estruturados + Tool) | ✅ Concluída (dados/CRUD — Tool é Fase 4) |
 | 4 | Orquestração multi-tool (function calling nativo) | ✅ Concluída |
 | 5a | PPC real (RAG + matriz curricular estruturada) | ✅ Concluída |
-| 5b | Calendário Acadêmico (dado estruturado + Tool) | 🔜 Próxima |
+| 5b | Calendário Acadêmico (dado estruturado + Tool) | ✅ Concluída |
 | 6 | Escopo por curso | ⏳ Pendente |
-| 7 | Calendário acadêmico (condicional) | ⏳ Pendente |
+| 7 | Calendário acadêmico (condicional) | ✅ Absorvida pela Fase 5b (dado real ficou disponível antes da condição de demanda validada) |
 | 8 | Observabilidade admin (opcional) | ⏳ Pendente |
 
 ### Nota para a escrita do TCC II
@@ -315,11 +315,35 @@ O achado do `DisciplineTool` é talvez o exemplo mais didático do projeto intei
 
 ---
 
+## Fase 5b — Calendário Acadêmico (dado estruturado + Tool)
+
+**Status:** ✅ Concluída e verificada — 2026-07-03
+
+**Objetivo:** tratar o Calendário Acadêmico de Graduação como dado estruturado consultado via Tool, não como texto de RAG — mesma lógica de professores (D9) e da matriz curricular (Fase 5a). O usuário anexou o PDF real do Calendário 2026 já na discussão da Fase 5, o que puxou para agora a Fase 7 do roadmap original (`PLANO_V2.md`), que estava marcada como condicional "só se houver demanda validada" — a demanda passou a existir assim que o dado real ficou disponível.
+
+### O que foi feito
+
+- `AcademicEvent` (novo model, migration): `course_id` nullable (`None` = vale para todos os cursos, é o caso de 100% dos eventos deste calendário — não é específico de Engenharia de Computação), `title`, `start_date`, `end_date` nullable (evento de um dia), `category`, `legal_reference` (preserva a mesma rastreabilidade normativa já aplicada ao RAG — vários eventos do calendário citam artigos/resoluções específicas), `campus` nullable (`None` = todos os campi; alguns feriados municipais valem só para um campus), `academic_period` (ex.: `"2026.1"`).
+- `src/calendar_events/` (novo módulo, mesmo formato de `src/professors/`): `service.py` (`create_event`, `list_events` com filtros por `course_id`/`category`/`academic_period`/intervalo de datas, `get_event`, `update_event`, `delete_event`); `router.py` — único endpoint público `GET /academic-events`, protegido por `x-api-key` (mesmo padrão de `/professors`).
+- `src/admin/schemas.py`/`router.py` estendidos com CRUD completo (`POST`/`GET`/`GET {id}`/`PATCH`/`DELETE /admin/academic-events`), mesmo formato do CRUD de professores/disciplinas da Fase 3.
+- `src/agent/tools/calendar_tool.py` (novo, `search_academic_calendar`): wrap fino sobre `calendar_events.service.list_events` — zero lógica de consulta nova, mesmo contrato uniforme (`execute(arguments, context) -> {"summary", "sources"}`) das outras três tools. Registrado em `orchestrator.py` (`TOOLS`/`TOOL_SCHEMAS`/`STATUS_MESSAGES`) e no `SYSTEM_PROMPT`, com uma instrução explícita para não deixar `search_normative_documents` responder por prazos exatos.
+- `SourceInfo.origin` ganhou um quarto valor (`"calendar"`, aditivo) e `_build_source_infos` em `chat/service.py` foi estendido para esse caso.
+- `scripts/seed_calendar_2026.py` (novo): 121 eventos reais extraídos do PDF completo do Calendário Acadêmico 2026 (janeiro/2026 a março/2027) — início/fim de período letivo, prazos de matrícula/rematrícula/trancamento, feriados nacionais/estaduais/municipais por campus (JUA, PNZ, PAV, SAL, SBF, SRN), colação de grau, exames finais e demais prazos administrativos. Idempotente por `(title, start_date)`.
+
+### Verificação realizada
+
+Migration aplicada isoladamente (só `academic_events`, autogenerate confirmou); seed rodado 2x — 121 criados na primeira execução, 0 na segunda (idempotência); `GET /academic-events?academic_period=2026.1` (público, `x-api-key`) retornando os eventos corretos; ciclo CRUD completo em `/admin/academic-events` com um evento de teste (criado com um `AdminUser` efêmero, removido ao final junto com o admin de teste); pergunta real via `POST /chat/` — **"Quando é o período de trancamento de matrícula em 2026.1?"** → aciona `search_academic_calendar`, responde "6 a 10 de abril de 2026" (data exata do PDF real, `origin="calendar"`) em vez de arriscar uma resposta aproximada via RAG; segunda pergunta ("Quando começam as aulas do período 2026.2?") → resposta correta (10/08/2026) filtrando por categoria de período letivo; regressão de saudação sem tools confirmada (`used_tools=[]`).
+
+### Nota para a escrita do TCC II
+
+Junto com o achado do `DisciplineTool` na Fase 5a, esta fase fecha o terceiro (e último, no escopo atual) exemplo empírico do mesmo padrão arquitetural: fato exato → SQL/Tool, prosa → RAG. Vale como uma tabela comparativa na seção de Resultados — três domínios de dado (corpo docente, matriz curricular, calendário acadêmico), mesma decisão de design aplicada três vezes, cada uma validada contra uma pergunta real que uma busca semântica pura responderia com risco de erro.
+
+---
+
 ## Itens Pendentes / Próximos Passos
 
 > Atualizar ao final de cada fase.
 
-- [ ] Planejar e implementar Fase 5b (Calendário Acadêmico): `AcademicEvent`, `CalendarTool` — puxa a Fase 7 do roadmap original pra agora, dado real já disponível (calendário 2026 já lido nesta conversa).
 - [ ] Fase 6 (escopo por curso): expor `course_id` em `ChatRequest`, filtro `$or` no retrieval, `GET /courses`.
 - [ ] Refinar `ProfessorTool` para aceitar `nde_role`/`is_nde` como parâmetro de busca (achado da Fase 4).
 - [ ] Decidir o comportamento de `revoked` em reindex de documentos (achado da Fase 2) quando o painel admin existir.

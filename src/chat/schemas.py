@@ -34,8 +34,8 @@ class SourceInfo(BaseModel):
     origin: str = Field(
         default="rag",
         description=(
-            "Origem da fonte: 'rag' (documento normativo), 'professor' (corpo docente) "
-            "ou 'discipline' (matriz curricular)."
+            "Origem da fonte: 'rag' (documento normativo), 'professor' (corpo docente), "
+            "'discipline' (matriz curricular) ou 'calendar' (calendário acadêmico)."
         ),
     )
     source: str

@@ -72,6 +72,22 @@ def _build_source_infos(raw_sources: list[dict]) -> list[SourceInfo]:
                     ),
                 )
             )
+        elif src.get("origin") == "calendar":
+            date_range = src.get("start_date", "")
+            if src.get("end_date") and src["end_date"] != src.get("start_date"):
+                date_range += f" a {src['end_date']}"
+            campus = f" ({src['campus']})" if src.get("campus") else ""
+            infos.append(
+                SourceInfo(
+                    origin="calendar",
+                    source=src.get("title", ""),
+                    category=f"Calendário Acadêmico — {src.get('category') or 'evento'}{campus}",
+                    snippet=(
+                        date_range
+                        + (f" | {src['legal_reference']}" if src.get("legal_reference") else "")
+                    ),
+                )
+            )
         else:
             source_name = src.get("source", "")
             infos.append(
