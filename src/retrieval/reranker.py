@@ -31,6 +31,19 @@ def get_reranker() -> CrossEncoder:
     return _reranker_model
 
 
+def warm_up() -> None:
+    """
+    Carrega o modelo e executa uma predição descartável.
+
+    Chamado no startup da API (ver src/main.py) para que o custo de carregar
+    o Cross-Encoder (download dos pesos na primeira vez, ~2.2GB; ou apenas
+    instanciar o modelo em memória nas seguintes) recaia sobre a inicialização
+    do processo, não sobre a primeira pergunta de um usuário real.
+    """
+    model = get_reranker()
+    model.predict([("warm up", "warm up")])
+
+
 def rerank(
     query: str,
     candidates: list[SearchResult],

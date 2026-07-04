@@ -29,7 +29,10 @@ Confirme que `docker compose version` funciona (Compose v2, integrado ao Docker 
 Move os dados de duas origens diferentes — **não é tudo volume Docker**:
 
 - `postgres_data` e `chroma_data` (cursos/documentos/professores/disciplinas/calendário/admins e os vetores) já são volumes Docker de verdade, populados pelos containers `postgres`/`chromadb` usados durante o desenvolvimento.
-- `data/raw/` (PDFs enviados), `data/chunks/` (JSONLs usados pelo BM25) e `data/logs/` (histórico de queries) — se você rodou o projeto localmente até agora (`uvicorn` direto, fora do container `api`, que é o padrão usado durante o desenvolvimento deste projeto), **esses três vivem no disco do host**, na própria pasta do projeto, não em volume Docker. Isso importa em especial para `data/chunks/`: está tanto no `.gitignore` quanto no `.dockerignore` (gerado, não versionado — mas legitimamente necessário em runtime para o BM25), então **nem `git clone` nem `docker build` o transferem** — sem copiar esse diretório manualmente, o container novo sobe com o BM25 vazio (`HybridSearchEngine` degrada para busca só-densa, sem erro nenhum — silencioso). O `docker-compose.yml` já declara `data_raw`/`data_chunks`/`data_logs` como volumes persistentes para o serviço `api`, para que isso não se repita a cada rebuild *depois* da primeira migração.
+- `hf_cache` (pesos do reranker `BAAI/bge-reranker-v2-m3`, ~2.2GB) também é um volume Docker de verdade, mas populado só em runtime pelo próprio container `api` (baixado do HuggingFace Hub na primeira vez que o reranker é usado). Migrar ele é **opcional** — sem ele, a máquina destino simplesmente baixa os pesos de novo na primeira inicialização (alguns minutos, dependendo da rede); nenhum dado é perdido.
+- `data/raw/` (PDFs enviados), `data/chunks/` (JSONLs usados pelo BM25) e `data/logs/` (histórico de queries) — se você rodou o projeto localmente até agora (`uvicorn` direto, fora do container `api`, que é o padrão usado durante o desenvolvimento deste projeto), **esses três vivem no disco do host**, na própria pasta do projeto, não em volume Docker. Isso importa em especial para `data/chunks/`: está tanto no `.gitignore` quanto no `.dockerignore` (gerado, não versionado — mas legitimamente necessário em runtime para o BM25), então **nem `git clone` nem `docker build` o transferem** — sem copiar esse diretório manualmente, o container novo sobe com o BM25 vazio (`HybridSearchEngine` degrada para busca só-densa, sem erro nenhum — silencioso). O `docker-compose.yml` já declara `data_raw`/`data_chunks`/`data_logs`/`hf_cache` como volumes persistentes para o serviço `api`, para que isso não se repita a cada rebuild *depois* da primeira migração.
+
+> A API pré-carrega o reranker e o motor de busca híbrida no startup (`src/main.py`), então o primeiro request real do chat nunca paga esse custo — mas o próprio startup do container demora enquanto isso roda: alguns segundos com `hf_cache` já populado, ~1-2 minutos numa máquina nova baixando os pesos pela primeira vez. `docker compose ps`/`make health` só devem ser conferidos depois disso terminar (ver `docker compose logs api` — procure por "Modelos pré-carregados").
 
 ### 1. Na máquina de origem — empacotar tudo
 
@@ -39,8 +42,8 @@ docker compose stop   # garante consistência do postgres/chroma antes de copiar
 
 mkdir -p ~/tcc-migration
 
-# postgres_data e chroma_data: volumes Docker de verdade
-for VOL in postgres_data chroma_data; do
+# postgres_data, chroma_data, hf_cache: volumes Docker de verdade
+for VOL in postgres_data chroma_data hf_cache; do
   FULL_NAME=$(docker volume ls -q | grep "_${VOL}$")
   echo "Empacotando ${FULL_NAME}..."
   docker run --rm -v "${FULL_NAME}:/data" -v ~/tcc-migration:/backup alpine \
@@ -55,7 +58,7 @@ tar czf ~/tcc-migration/data_logs.tar.gz   -C data/logs   .
 docker compose start   # ou deixe parado, se for desligar a máquina
 ```
 
-Transfira `~/tcc-migration/*.tar.gz` (5 arquivos) para a máquina destino (scp, pendrive, o que for prático).
+Transfira `~/tcc-migration/*.tar.gz` (6 arquivos) para a máquina destino (scp, pendrive, o que for prático).
 
 ### 2. Na máquina destino — clonar o código e restaurar os volumes
 
@@ -68,7 +71,7 @@ nano .env   # preencher OPENAI_API_KEY, TCC_API_KEY, JWT_SECRET (ver seção 2.4
 docker compose up -d --build   # cria os volumes vazios e a rede
 docker compose stop            # para poder escrever nos volumes sem conflito de processo
 
-for VOL in postgres_data chroma_data data_raw data_chunks data_logs; do
+for VOL in postgres_data chroma_data hf_cache data_raw data_chunks data_logs; do
   FULL_NAME=$(docker volume ls -q | grep "_${VOL}$")
   docker run --rm -v "${FULL_NAME}:/data" -v ~/tcc-migration:/backup alpine \
     sh -c "rm -rf /data/* && tar xzf /backup/${VOL}.tar.gz -C /data"

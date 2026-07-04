@@ -3,7 +3,7 @@
 
 COMPOSE    ?= docker compose
 BACKUP_DIR ?= $(HOME)/tcc-migration
-VOLUMES    := postgres_data chroma_data data_raw data_chunks data_logs
+VOLUMES    := postgres_data chroma_data hf_cache data_raw data_chunks data_logs
 
 .DEFAULT_GOAL := help
 .PHONY: help check-env build up down restart ps logs migrate seed create-admin \
@@ -38,8 +38,9 @@ build: check-env
 	$(COMPOSE) build
 
 up: check-env
-	$(COMPOSE) up -d --build
+	$(COMPOSE) create --build
 	@$(MAKE) sync-chunks
+	$(COMPOSE) start
 
 down:
 	$(COMPOSE) down
@@ -92,21 +93,36 @@ health:
 # Necessário na PRIMEIRA vez que se passa a rodar via container nesta mesma
 # máquina: esse diretório está no .dockerignore (nunca entra na imagem), então
 # o volume novo sobe vazio e o BM25 degrada pra busca só-densa, sem erro nenhum.
-# Chamado automaticamente pelo `up` — no-op silencioso se não houver nada a
-# copiar (ex: instalação nova, sem histórico local).
+#
+# `up` roda isso ANTES de iniciar o container `api` (via `create` + `start` em
+# vez de `up -d` direto) — de propósito: reiniciar o `api` depois que ele já
+# subiu jogaria fora o warm-up do reranker em andamento (~85s baixando
+# ~2.2GB na primeira vez, ver src/main.py) e ele começaria tudo de novo.
+# Rodado sozinho (`make sync-chunks`) enquanto o `api` já está no ar, reinicia
+# o container pra ele recarregar os chunks recém-copiados.
 sync-chunks:
 	@if [ -d data/chunks ] && [ -n "$$(ls -A data/chunks 2>/dev/null)" ]; then \
 		FULL_NAME=$$(docker volume ls -q | grep "_data_chunks$$"); \
+		if [ -z "$$FULL_NAME" ]; then \
+			echo "⚠️  Volume data_chunks ainda não existe — rode 'make up' primeiro."; \
+			exit 0; \
+		fi; \
 		echo "Copiando data/chunks/ (host) → volume $$FULL_NAME..."; \
 		docker run --rm -v "$$FULL_NAME:/dest" -v "$(CURDIR)/data/chunks:/src:ro" alpine \
 			sh -c "cp -a /src/. /dest/"; \
-		$(COMPOSE) restart api; \
-		echo "✅ Chunks sincronizados, BM25 recarregado."; \
+		if [ -n "$$($(COMPOSE) ps -q api 2>/dev/null)" ]; then \
+			$(COMPOSE) restart api; \
+			echo "✅ Chunks sincronizados, BM25 recarregado."; \
+		else \
+			echo "✅ Chunks copiados (api ainda não estava rodando)."; \
+		fi; \
 	fi
 
 # ── Migração entre máquinas (Opção A do DEPLOY.md) ──────────────────────────
 #
-# postgres_data/chroma_data são volumes Docker de verdade. data/raw, data/chunks
+# postgres_data/chroma_data/hf_cache são volumes Docker de verdade (o último,
+# cache de pesos do reranker, é opcional migrar — sem ele a máquina destino só
+# baixa os ~2.2GB de novo na primeira vez, sem perda de dado). data/raw, data/chunks
 # e data/logs vivem no disco do host quando o projeto é rodado via `uvicorn`
 # local (padrão de desenvolvimento) — data/chunks em particular está tanto no
 # .gitignore quanto no .dockerignore, então nem `git clone` nem `docker build`
@@ -116,7 +132,7 @@ sync-chunks:
 backup: check-env
 	@mkdir -p $(BACKUP_DIR)
 	$(COMPOSE) stop
-	@for VOL in postgres_data chroma_data; do \
+	@for VOL in postgres_data chroma_data hf_cache; do \
 		FULL_NAME=$$(docker volume ls -q | grep "_$${VOL}$$"); \
 		echo "Empacotando $$FULL_NAME..."; \
 		docker run --rm -v "$$FULL_NAME:/data" -v $(BACKUP_DIR):/backup alpine \
@@ -127,7 +143,7 @@ backup: check-env
 	tar czf $(BACKUP_DIR)/data_logs.tar.gz   -C data/logs   .
 	$(COMPOSE) start
 	@echo ""
-	@echo "✅ Backup em $(BACKUP_DIR) (5 arquivos). Transfira para a máquina destino"
+	@echo "✅ Backup em $(BACKUP_DIR) (6 arquivos). Transfira para a máquina destino"
 	@echo "   (scp/pendrive) e rode 'make restore BACKUP_DIR=<mesmo-caminho-la>'."
 
 restore: check-env

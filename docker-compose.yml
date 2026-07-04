@@ -20,6 +20,10 @@ services:
       - data_raw:/app/data/raw
       - data_chunks:/app/data/chunks
       - data_logs:/app/data/logs
+      # Pesos do reranker (BAAI/bge-reranker-v2-m3, ~2.2GB) baixados pelo
+      # HuggingFace Hub na primeira execução. Sem este volume, cada rebuild
+      # ou troca de container baixa tudo de novo (minutos, dependendo da rede).
+      - hf_cache:/root/.cache/huggingface
     depends_on:
       chromadb:
         condition: service_healthy
@@ -89,6 +93,8 @@ volumes:
   data_chunks:
     driver: local
   data_logs:
+    driver: local
+  hf_cache:
     driver: local
 
 networks:
