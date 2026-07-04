@@ -11,6 +11,15 @@ services:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-univasf}:${POSTGRES_PASSWORD:-univasf}@postgres:5432/${POSTGRES_DB:-univasf}
+    volumes:
+      # Gerados em runtime (uploads via admin, chunks do BM25, logs de query) — não
+      # fazem parte da imagem além do que já estiver versionado no git. Sem esses
+      # volumes, um `docker compose up -d --build` (rebuild) perderia documentos
+      # enviados via /admin/documents e degradaria o BM25 para busca só-densa,
+      # silenciosamente, para qualquer conteúdo processado desde o último commit.
+      - data_raw:/app/data/raw
+      - data_chunks:/app/data/chunks
+      - data_logs:/app/data/logs
     depends_on:
       chromadb:
         condition: service_healthy
@@ -74,6 +83,12 @@ volumes:
   chroma_data:
     driver: local
   postgres_data:
+    driver: local
+  data_raw:
+    driver: local
+  data_chunks:
+    driver: local
+  data_logs:
     driver: local
 
 networks:

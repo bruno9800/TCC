@@ -27,7 +27,14 @@ echo "🐳 Atualizando containers Docker..."
 # --remove-orphans: Remove containers que não estão mais no docker-compose
 docker compose up -d --build --remove-orphans
 
-# 4. Verifica status
+# 4. Aplica migrations pendentes
+# Necessário sempre que o pull trouxer uma nova migration (alembic/versions/) —
+# sem isso, o schema do Postgres fica defasado em relação ao código e a API
+# quebra em runtime na primeira query que tocar uma coluna/tabela nova.
+echo "🗄️  Aplicando migrations do banco..."
+docker compose exec -T api alembic upgrade head
+
+# 5. Verifica status
 echo "🔍 Verificando serviços..."
 sleep 5
 docker compose ps
