@@ -7,7 +7,7 @@ VOLUMES    := postgres_data chroma_data data_raw data_chunks data_logs
 
 .DEFAULT_GOAL := help
 .PHONY: help check-env build up down restart ps logs migrate seed create-admin \
-        reindex bootstrap deploy backup restore health
+        reindex bootstrap deploy backup restore health sync-chunks
 
 help:
 	@echo "UNIVASF RAG API — alvos de deploy (ver DEPLOY.md para o passo a passo detalhado)"
@@ -39,6 +39,7 @@ build: check-env
 
 up: check-env
 	$(COMPOSE) up -d --build
+	@$(MAKE) sync-chunks
 
 down:
 	$(COMPOSE) down
@@ -85,6 +86,23 @@ deploy:
 
 health:
 	@curl -sf http://localhost:8000/health && echo " OK" || (echo " FALHOU" && exit 1)
+
+# Copia data/chunks/ do disco do host (populado quando o projeto roda localmente
+# via `uvicorn`, fora do Docker) para o volume `data_chunks` do serviço `api`.
+# Necessário na PRIMEIRA vez que se passa a rodar via container nesta mesma
+# máquina: esse diretório está no .dockerignore (nunca entra na imagem), então
+# o volume novo sobe vazio e o BM25 degrada pra busca só-densa, sem erro nenhum.
+# Chamado automaticamente pelo `up` — no-op silencioso se não houver nada a
+# copiar (ex: instalação nova, sem histórico local).
+sync-chunks:
+	@if [ -d data/chunks ] && [ -n "$$(ls -A data/chunks 2>/dev/null)" ]; then \
+		FULL_NAME=$$(docker volume ls -q | grep "_data_chunks$$"); \
+		echo "Copiando data/chunks/ (host) → volume $$FULL_NAME..."; \
+		docker run --rm -v "$$FULL_NAME:/dest" -v "$(CURDIR)/data/chunks:/src:ro" alpine \
+			sh -c "cp -a /src/. /dest/"; \
+		$(COMPOSE) restart api; \
+		echo "✅ Chunks sincronizados, BM25 recarregado."; \
+	fi
 
 # ── Migração entre máquinas (Opção A do DEPLOY.md) ──────────────────────────
 #
