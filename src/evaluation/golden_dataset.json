@@ -1,77 +1,77 @@
 [
     {
         "question": "Quais são os critérios para trancamento de matrícula na UNIVASF?",
-        "ground_truth": "O trancamento de matrícula é regulamentado pela Resolução 08/2015 - Normas gerais de Graduação.",
+        "ground_truth": "Para a graduação presencial na UNIVASF, o trancamento é regido pela Resolução Nº 08/2015 do CONUNI. Os principais critérios são:Restrição inicial: Não é permitido a estudantes do 1° período do curso.Prazo: Deve ser solicitado diretamente pelo estudante no sistema SIG@ durante o período definido no Calendário Acadêmico.Duração: É concedido por semestre, podendo ser total (todas as disciplinas) ou parcial (por componente curricular).Trancamento de Disciplina: Só é permitido antes de atingir \\(\\frac{1}{3}\\) da carga horária da disciplina e não é admitido mais de um trancamento para a mesma.Nota: Para alunos de Educação a Distância (EaD), o trancamento não é admitido e a suspensão implica o desligamento do curso, conforme a Resolução Nº 05/2016.",
         "source": "Resolução 08/2015"
     },
     {
         "question": "O que diz o estatuto da UNIVASF sobre a estrutura organizacional?",
-        "ground_truth": "O estatuto da UNIVASF define a estrutura organizacional da universidade.",
+        "ground_truth": "O Estatuto da Univasf divide a administração universitária em dois níveis hierárquicos integrados: o Nível Superior e o Nível dos Colegiados Acadêmicos, visando a integração entre ensino, pesquisa e extensão.A estrutura é composta por:Nível Superior: Composto pela Administração Superior, que compreende:O Conselho Universitário (Conuni): Órgão máximo de caráter normativo, deliberativo, consultivo e de planejamento.O Conselho de Curadores: Órgão consultivo e deliberativo encarregado da fiscalização econômico-financeira.A Reitoria: Instância executiva responsável pela gestão da instituição.",
         "source": "Estatuto UNIVASF"
     },
     {
         "question": "Quais as normas para dispensa de componentes curriculares?",
-        "ground_truth": "A dispensa de componentes curriculares é regulamentada pela Resolução 03/2013.",
-        "source": "Resolução 03/2013"
+        "ground_truth": "A dispensa (ou aproveitamento) de componentes curriculares na UNIVASF é regida principalmente pela Resolução nº 02/2023 (da Câmara de Ensino), alterada posteriormente pela Resolução nº 01/2024.O aluno pode solicitar o aproveitamento de estudos de disciplinas cursadas na própria universidade ou em outras instituições de ensino superior (IES), desde que haja compatibilidade de carga horária (geralmente equivalente a pelo menos 75% da disciplina de destino) e de conteúdos programáticos, além de aprovação prévia da coordenação do curso.",
+        "source": "Resolução 02/2023"
     },
     {
         "question": "Como funciona a colação de grau na UNIVASF?",
-        "ground_truth": "A colação de grau é regulamentada pela Resolução 18/2017, alterada pela Resolução 02/2019.",
+        "ground_truth": "A colação de grau na UNIVASF segue as diretrizes da Resolução Nº 18/2017 do CONUNI (alterada pela Resolução Nº 12/2019), que estabelece que a outorga pode ocorrer de forma oficial (solene) ou extemporânea (em gabinete). O processo ocorre da seguinte forma:Colação de Grau Oficial/Solene: Cerimônia pública e formal organizada pela Coordenação de Cerimonial em datas definidas no calendário acadêmico.Colação de Grau em Gabinete (Extemporânea): Realizada antecipadamente à cerimônia oficial ou após o prazo. Deve ser solicitada via requerimento no Sistema de Informação ao Cidadão (SIC) dirigido à Secretaria de Registro e Controle Acadêmico (SRCA).Justificativas aceitas: O grau antecipado é exclusivo para casos como aprovação em concurso público, aprovação em pós-graduação, transferência ex-officio, intercâmbio/viagem ao exterior ou outras situações previstas em lei.",
         "source": "Resolução 18/2017"
     },
     {
         "question": "Quais são as normas sobre estágio na UNIVASF?",
-        "ground_truth": "O estágio é regulamentado pela Resolução 09/2022.",
+        "ground_truth": "Na UNIVASF, os estágios são regulamentados pela Resolução Nº 009/2022 - CONUNI, que está alinhada à Lei Federal nº 11.788/2008. Ela divide o estágio em Obrigatório (parte do currículo, exigido para colação de grau) e Não Obrigatório (atividade extracurricular opcional).Os estágios na UNIVASF seguem estas diretrizes:Carga Horária: Limitada a 6 horas diárias e 30 horas semanais para estudantes em geral; ou 8 horas diárias e 40 horas semanais para estágios de cursos que alternam teoria e prática (com períodos sem aulas presenciais).Matrícula Obrigatória: Para cursar o estágio obrigatório, o estudante geralmente precisa ter integralizado pelo menos 70% da carga horária do seu curso.Bolsa e Benefícios: O estágio não obrigatório exige bolsa-auxílio e auxílio-transporte. Já no obrigatório, esses benefícios são facultativos. Todos exigem seguro contra acidentes pessoais.Rescisão: É assegurado ao estagiário o recesso remunerado de 30 dias a cada 12 meses de contrato (ou de forma proporcional a períodos menores).",
         "source": "Resolução 09/2022"
     },
     {
         "question": "O que são atividades complementares (ACC) na UNIVASF?",
-        "ground_truth": "As atividades complementares são regulamentadas pela Resolução 02/2018, alterada pela Resolução 01/2019.",
+        "ground_truth": "Na Univasf, as Atividades Curriculares Complementares (ACC) são componentes obrigatórios dos cursos de graduação que visam enriquecer a formação acadêmica. Elas são realizadas por meio de estudos e práticas independentes — como monitorias, iniciação científica, extensão, congressos e palestras — permitindo a flexibilização curricular.As diretrizes institucionais gerais para essas atividades estão estabelecidas na Resolução nº 02/2018, que foi posteriormente alterada pela Resolução nº 01/2019.Para conferir o regulamento, as pontuações e o barema específico do seu curso, consulte a Resolução nº 02/2018 da Pró-Reitoria de Ensino (Proen).",
         "source": "Resolução 02/2018"
     },
     {
         "question": "Quais são os critérios para desligamento de discente?",
-        "ground_truth": "O desligamento de discente é regulamentado pela Resolução 07/2019.",
+        "ground_truth": "O desligamento de discente da Univasf é regulamentado pela Resolução nº 07/2019 do Conselho Universitário (Conuni), e divide-se em cancelamento voluntário (a pedido) e por ato administrativo (de ofício).Os critérios de desligamento incluem:Voluntário: Quando o estudante solicita a transferência para outra instituição ou por expressa manifestação de vontade (cancelamento de vínculo).Administrativo (Compulsório):Motivos Disciplinares: decorrente de sanções aplicadas conforme o regimento institucional.Evasão/Abandono: ausência de matrícula por dois semestres consecutivos.Rendimento Acadêmico: não obtenção de aprovação em, pelo menos, um componente curricular (crédito) em dois semestres consecutivos, ressalvadas as exceções regimentais.Ultrapassar o Prazo de Integralização: quando o discente não conclui o curso dentro do prazo máximo estipulado pelo Projeto Pedagógico do Curso.",
         "source": "Resolução 07/2019"
     },
     {
         "question": "Como funciona a mobilidade acadêmica na UNIVASF?",
-        "ground_truth": "A mobilidade acadêmica é regulamentada pela Resolução 13/2017.",
+        "ground_truth": "Na UNIVASF, a mobilidade acadêmica permite que alunos de graduação cursem disciplinas em outras instituições conveniadas, mantendo o vínculo com a universidade. O processo é regulamentado pela Resolução nº 13/2017 do Conselho Universitário (CONUNI). Os créditos são validados automaticamente mediante aprovação no plano de estudos.",
         "source": "Resolução 13/2017"
     },
     {
         "question": "Quais são as normas disciplinares para alunos da UNIVASF?",
-        "ground_truth": "As normas disciplinares são regulamentadas pela Resolução 06/2015.",
+        "ground_truth": "As normas disciplinares da UNIVASF são regidas pela Resolução Nº 06/2015 do Conselho Universitário (CONUNI), que estabelece os direitos e deveres dos discentes.Entre os principais deveres, o aluno deve:Respeitar a integridade física e moral dos membros da comunidade acadêmica.Preservar o patrimônio da instituição.Cumprir as decisões das instâncias acadêmicas.",
         "source": "Resolução 06/2015"
     },
     {
         "question": "Como funciona o processo de preenchimento de vagas ociosas?",
-        "ground_truth": "O preenchimento de vagas ociosas é regulamentado pela Resolução 11/2013.",
-        "source": "Resolução 11/2013"
+        "ground_truth": "O preenchimento de vagas ociosas na Univasf ocorre por meio do Processo Seletivo para Preenchimento de Vagas Ociosas (PS-PVO), que contempla modalidades como Transferência Interna e Externa, Reingresso e Diplomados. Os interessados devem se inscrever no sistema acadêmico Sig@ conforme cronograma publicado nos editais específicos da instituição.",
+        "source": "Resolução 28/2019 "
     },
     {
         "question": "Quais são as regras para vista e revisão de prova na UNIVASF?",
-        "ground_truth": "A vista e revisão de prova são regulamentadas pela Resolução 02/2022.",
+        "ground_truth": "Na Univasf, o direito à vista e revisão de prova é garantido a todos os estudantes de graduação. O processo exige atenção rigorosa aos prazos abaixo, conforme a Resolução nº 02/2022:Solicitação de Vista: Você tem até 2 (dois) dias úteis após a divulgação das notas no sistema acadêmico para solicitar a vista. Isso é feito por meio de um requerimento protocolado no respectivo campus (via SIC) e encaminhado à Coordenação do Curso.Prazo do Professor: O docente tem até 10 (dez) dias úteis após receber o requerimento para conceder a vista da prova.Solicitação de Revisão: Caso não concorde com a correção, você tem até 2 (dois) dias úteis a partir da data de vista para solicitar formalmente a revisão de correção.Resultado da Revisão: O professor tem até 15 (quinze) dias úteis para analisar a solicitação, emitir uma justificativa e publicar o resultado, que pode manter, aumentar ou até diminuir a sua nota.",
         "source": "Resolução 02/2022"
     },
     {
         "question": "O que é o NDE e como ele funciona na UNIVASF?",
-        "ground_truth": "O NDE (Núcleo Docente Estruturante) é regulamentado pela Resolução 14/2021.",
+        "ground_truth": "O Núcleo Docente Estruturante (NDE) é um órgão consultivo e de acompanhamento do Colegiado de Curso responsável pela formulação, implementação e contínua atualização do Projeto Pedagógico do Curso (PPC). Na UNIVASF, ele atua diretamente na estruturação de matrizes curriculares e no alinhamento às diretrizes de ensino.A atuação e a composição do NDE na instituição são regidas principalmente pela Resolução nº 14/2021 e, em nível nacional, pela Resolução CONAES nº 01/2010.Como funciona na UNIVASF:Composição: É formado por pelo menos 5 docentes do curso, com pelo menos 30% deles em regime de tempo integral. O coordenador do curso é o seu presidente nato.Atribuições: O NDE avalia o desempenho dos alunos, analisa a viabilidade da oferta de disciplinas e sugere inovações na metodologia de ensino, atuando de forma integrada com o corpo docente e discente.Decisões: As deliberações e propostas são registradas em atas e encaminhadas para aprovação final do Colegiado do Curso e instâncias superiores.",
         "source": "Resolução 14/2021"
     },
     {
         "question": "Como funciona a revalidação de diploma na UNIVASF?",
-        "ground_truth": "A revalidação de diploma é regulamentada pela Resolução 08/2017, alterada pela Resolução 03/2018.",
+        "ground_truth": "A revalidação de diplomas de graduação obtidos no exterior na UNIVASF é feita pela Pró-Reitoria de Ensino (PROEN). O processo exige aprovação no Exame Nacional (Revalida) para cursos como Medicina ou a submissão de documentação acadêmica para análise de equivalência, regulamentados pela Resolução CONUNI nº 08/2017 (alterada pela Resolução CONUNI nº 03/2018).Para dar andamento ao processo de revalidação, observe as diretrizes e os requisitos:Legislação Base: O processo segue as normas gerais do Conselho Nacional de Educação (Resolução CNE/CES nº 2/2024) e as normas internas da instituição.Prazo: A tramitação interna tem um prazo máximo de até 180 dias a partir da data de protocolo do requerimento.Vedações: Não é permitido solicitar a revalidação do mesmo diploma simultaneamente em mais de uma universidade pública.",
         "source": "Resolução 08/2017"
     },
     {
         "question": "Quais são as finalidades da UNIVASF segundo o estatuto?",
-        "ground_truth": "O estatuto da UNIVASF define as finalidades da universidade.",
+        "ground_truth": "Segundo o Artigo 1º do Estatuto, a finalidade da UNIVASF é ministrar ensino superior, desenvolver pesquisas em diversas áreas do conhecimento e promover a extensão universitária, com inserção regional no semiárido nordestino.",
         "source": "Estatuto UNIVASF"
     },
     {
         "question": "Como funciona a curricularização da extensão na UNIVASF?",
-        "ground_truth": "A curricularização da extensão é regulamentada pela Resolução 03/2022.",
+        "ground_truth": "Na UNIVASF, a curricularização da extensão funciona pela inserção obrigatória de ações extensionistas na matriz curricular, correspondendo a pelo menos 10% da carga horária total do curso. Os estudantes realizam essas horas participando de programas, projetos, cursos e eventos que integrem o conhecimento acadêmico com a comunidade externa.Esse processo é regulamentado pela Resolução nº 03/2022 do Conselho Universitário (CONUNI).Como é cumprida:Disciplinas: A carga horária é diluída em componentes curriculares obrigatórios previstos no Projeto Pedagógico do Curso (PPC).Protagonismo: O aluno realiza as atividades com foco em impactos positivos em áreas como cultura, meio ambiente, ciência, arte e educação.",
         "source": "Resolução 03/2022"
     }
 ]

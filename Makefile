@@ -7,7 +7,7 @@ VOLUMES    := postgres_data chroma_data hf_cache data_raw data_chunks data_logs
 
 .DEFAULT_GOAL := help
 .PHONY: help check-env build up down restart ps logs migrate seed create-admin \
-        reindex bootstrap deploy backup restore health sync-chunks
+        reindex bootstrap deploy backup restore health sync-chunks eval
 
 help:
 	@echo "UNIVASF RAG API — alvos de deploy (ver DEPLOY.md para o passo a passo detalhado)"
@@ -30,6 +30,9 @@ help:
 	@echo "    make logs                 segue os logs do container api"
 	@echo "    make ps                   status dos containers"
 	@echo "    make health               checa GET /health"
+	@echo ""
+	@echo "  Avaliação:"
+	@echo "    make eval                 roda a avaliação RAGAS sobre o golden dataset e imprime a tabela de métricas"
 
 check-env:
 	@test -f .env || (echo "❌ .env não encontrado. Rode: cp .env.example .env && nano .env" && exit 1)
@@ -74,6 +77,14 @@ create-admin: check-env
 reindex:
 	$(COMPOSE) exec api python scripts/run_etl.py
 	$(COMPOSE) exec api python scripts/run_indexing.py
+
+# Avaliação RAGAS sobre o golden dataset (15 perguntas). Roda o pipeline
+# completo (busca + rerank + geração) por pergunta e depois o juiz — consome
+# API da OpenAI (geração + juiz + embeddings). O juiz usa o mesmo LLM_MODEL
+# da geração por padrão; para usar outro: RAGAS_JUDGE_MODEL=gpt-4o make eval.
+# Imprime a tabela final no terminal e salva o JSON em data/ragas_report_*.json.
+eval:
+	$(COMPOSE) exec -e RAGAS_JUDGE_MODEL="$(RAGAS_JUDGE_MODEL)" api python scripts/run_eval.py
 
 bootstrap: up migrate seed
 	@echo ""

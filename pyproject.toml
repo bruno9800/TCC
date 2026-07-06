@@ -18,7 +18,11 @@ dependencies = [
     # Reranking
     "sentence-transformers>=3.4.0",
     # Evaluation
-    "ragas>=0.2.0",
+    # ragas 0.4.3 importa langchain_community.chat_models.vertexai, removido no
+    # langchain-community 0.4.2 — sem o pin, um build novo da imagem quebra o
+    # import do ragas (mesma classe de drift da Fase 1/chromadb, ver EVOLUTION_V2.md).
+    "ragas==0.4.3",
+    "langchain-community==0.4.1",
     "datasets>=3.0.0",
     # UI
     "streamlit>=1.41.0",
