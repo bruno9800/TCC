@@ -121,16 +121,25 @@ def get_or_create_collection(
 def index_chunks(
     chunks: list[LegalChunk],
     collection: chromadb.Collection | None = None,
-) -> chromadb.Collection:
+    id_prefix: str = "",
+) -> list[str]:
     """
     Indexa os chunks no ChromaDB com embeddings OpenAI.
 
     Args:
         chunks: Lista de LegalChunk para indexar.
         collection: Collection do ChromaDB (cria se None).
+        id_prefix: Namespace estável para os IDs dos chunks (ex: "doc42").
+            Quando fornecido, o ID vira f"{id_prefix}__{article_id}__{chunk_index}",
+            garantindo unicidade por documento (via chave primária do banco) em vez
+            de depender do nome do arquivo — corrige a classe de bug em que dois
+            documentos com o mesmo filename colidiam no mesmo ID/JSONL (ver
+            EVOLUTION_V2.md, Fase 0). Sem id_prefix, mantém o formato legado
+            baseado em `source`, para retrocompatibilidade.
 
     Returns:
-        A collection do ChromaDB com os chunks indexados.
+        Lista de IDs gerados no ChromaDB, na mesma ordem de `chunks` — usado
+        pelo IngestionService para espelhar em `DocumentChunk`.
     """
     if collection is None:
         collection = get_or_create_collection()
@@ -141,8 +150,9 @@ def index_chunks(
     metadatas: list[dict] = []
 
     for i, chunk in enumerate(chunks):
+        namespace = id_prefix or chunk.metadata.source
         chunk_id = (
-            f"{chunk.metadata.source}__"
+            f"{namespace}__"
             f"{chunk.metadata.article_id or 'preamble'}__"
             f"{chunk.metadata.chunk_index}"
         ).replace(" ", "_").replace("/", "-")
@@ -154,7 +164,8 @@ def index_chunks(
         ids.append(chunk_id)
         documents.append(chunk.content)
 
-        # ChromaDB aceita apenas str, int, float, bool em metadados
+        # ChromaDB aceita apenas str, int, float, bool em metadados —
+        # course_id=None (institucional) é mapeado para o sentinela 0.
         flat_meta = {
             "source": chunk.metadata.source,
             "category": chunk.metadata.category,
@@ -163,6 +174,8 @@ def index_chunks(
             "hierarchy": " > ".join(chunk.metadata.hierarchy),
             "chunk_index": chunk.metadata.chunk_index,
             "is_child_chunk": chunk.metadata.is_child_chunk,
+            "kb_slug": chunk.metadata.kb_slug,
+            "course_id": chunk.metadata.course_id or 0,
         }
         metadatas.append(flat_meta)
 
@@ -182,7 +195,7 @@ def index_chunks(
         logger.info(f"  Indexados: {min(end, len(ids))}/{len(ids)}")
 
     logger.info(f"Indexação completa: {collection.count()} chunks na collection")
-    return collection
+    return ids
 
 
 def query_dense(

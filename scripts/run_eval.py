@@ -4,9 +4,12 @@ Script para executar a avaliação RAGAS.
 
 Uso:
     python scripts/run_eval.py
+    RAGAS_JUDGE_MODEL=gpt-4o python scripts/run_eval.py   # juiz diferente da geração
 
 Executa o pipeline completo (busca + rerank + geração) para cada pergunta
-do golden dataset e calcula métricas RAGAS.
+do golden dataset, calcula métricas RAGAS e imprime uma tabela de resultados
+pronta para a monografia. O relatório completo (JSON, com scores por
+pergunta) é salvo em data/ragas_report_<timestamp>.json.
 """
 
 import logging
@@ -17,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import PROJECT_ROOT
-from src.evaluation.ragas_eval import run_evaluation
+from src.evaluation.ragas_eval import format_report, run_evaluation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,7 +42,9 @@ def main():
 
     report = run_evaluation(output_path=output_path)
 
-    logger.info(f"\nRelatório salvo em: {output_path}")
+    # Tabela final em stdout — pronta para copiar para o TCC
+    print("\n" + format_report(report))
+    print(f"\nRelatório completo salvo em: {output_path}")
 
 
 if __name__ == "__main__":

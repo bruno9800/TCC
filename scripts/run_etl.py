@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
 """
-Script para executar o pipeline ETL completo.
+Script de ETL — PDF → Markdown → Chunks.
+
+Itera os documentos registrados no banco (ver Document em src/db/models.py)
+com status "processing" ou "failed" (i.e. ainda não passaram pelo ETL/chunking
+com sucesso) e chama IngestionService.etl_and_chunk() para cada um.
+
+Sem argumentos, é seguro rodar a qualquer momento: documentos já
+processados (status "chunked"/"indexed") não são retocados.
 
 Uso:
-    python scripts/run_etl.py
-
-Converte todos os PDFs de regimentos_estatutos_resolucoes/ para Markdown
-e aplica chunking semântico-hierárquico.
+    python scripts/run_etl.py                  # processa pendentes
+    python scripts/run_etl.py --reindex 34      # força reprocessar um documento específico
 """
 
+import argparse
 import logging
 import sys
 from pathlib import Path
 
-# Adiciona o diretório raiz ao path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.config import DOCUMENTS_DIR, CHUNKS_DIR
-from src.etl.pdf_converter import run_etl
-from src.etl.revocation_filter import analyze_revocation
-from src.chunking.legal_chunker import chunk_document, save_chunks
+from src.db.models import Document
+from src.db.session import SessionLocal
+from src.ingestion.service import etl_and_chunk
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,54 +32,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+PENDING_STATUSES = ("processing", "failed")
+
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--reindex",
+        type=int,
+        metavar="DOCUMENT_ID",
+        help="Força o reprocessamento de um documento específico, independente do status atual.",
+    )
+    args = parser.parse_args()
+
     logger.info("=" * 60)
-    logger.info("PIPELINE ETL — Documentos Normativos UNIVASF")
+    logger.info("ETL — PDF → Markdown → Chunks")
     logger.info("=" * 60)
 
-    # Fase 1: Conversão PDF → Markdown
-    logger.info("\n📄 Fase 1: Conversão PDF → Markdown")
-    documents = run_etl()
+    db = SessionLocal()
+    try:
+        if args.reindex is not None:
+            document_ids = [args.reindex]
+        else:
+            documents = db.query(Document).filter(Document.status.in_(PENDING_STATUSES)).all()
+            document_ids = [d.id for d in documents]
 
-    if not documents:
-        logger.error("Nenhum documento convertido. Verifique o diretório de PDFs.")
-        return
+        if not document_ids:
+            logger.info("Nenhum documento pendente de ETL. Nada a fazer.")
+            return
 
-    # Fase 2: Análise de revogação + Chunking
-    logger.info("\n✂️  Fase 2: Chunking Semântico-Hierárquico")
+        logger.info(f"{len(document_ids)} documento(s) a processar: {document_ids}")
 
-    total_chunks = 0
-    revoked_count = 0
+        ok, failed = 0, 0
+        for document_id in document_ids:
+            try:
+                etl_and_chunk(document_id, db)
+                ok += 1
+            except Exception as e:
+                failed += 1
+                logger.error(f"  Falha no document_id={document_id}: {e}")
 
-    for doc in documents:
-        # Verifica revogação
-        revocation = analyze_revocation(doc.source_path, doc.markdown_text)
-
-        if revocation.is_revoked:
-            revoked_count += 1
-
-        # Chunking
-        chunks = chunk_document(
-            markdown_text=doc.markdown_text,
-            source=doc.filename,
-            category=doc.category,
-            status=revocation.status,
-        )
-
-        # Salva chunks em JSONL
-        output_name = doc.filename.replace(" ", "_")
-        save_chunks(chunks, output_name)
-        total_chunks += len(chunks)
-
-    # Resumo final
-    logger.info("\n" + "=" * 60)
-    logger.info("RESUMO DO ETL:")
-    logger.info(f"  📄 Documentos processados: {len(documents)}")
-    logger.info(f"  ⚠️  Documentos revogados: {revoked_count}")
-    logger.info(f"  ✂️  Chunks gerados: {total_chunks}")
-    logger.info(f"  📁 Chunks salvos em: {CHUNKS_DIR}")
-    logger.info("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info(f"ETL COMPLETO: {ok} ok, {failed} falhas")
+        logger.info("=" * 60)
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":

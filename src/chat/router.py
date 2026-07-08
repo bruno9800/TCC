@@ -34,6 +34,7 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             history=request.history,
             top_k=request.top_k,
             filter_revoked=request.filter_revoked,
+            course_id=request.course_id,
         )
         return response
     except Exception as e:
@@ -60,6 +61,7 @@ async def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
             history=request.history,
             top_k=request.top_k,
             filter_revoked=request.filter_revoked,
+            course_id=request.course_id,
         ),
         media_type="text/event-stream",
         headers={

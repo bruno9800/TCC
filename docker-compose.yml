@@ -10,8 +10,24 @@ services:
     environment:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-univasf}:${POSTGRES_PASSWORD:-univasf}@postgres:5432/${POSTGRES_DB:-univasf}
+    volumes:
+      # Gerados em runtime (uploads via admin, chunks do BM25, logs de query) — não
+      # fazem parte da imagem além do que já estiver versionado no git. Sem esses
+      # volumes, um `docker compose up -d --build` (rebuild) perderia documentos
+      # enviados via /admin/documents e degradaria o BM25 para busca só-densa,
+      # silenciosamente, para qualquer conteúdo processado desde o último commit.
+      - data_raw:/app/data/raw
+      - data_chunks:/app/data/chunks
+      - data_logs:/app/data/logs
+      # Pesos do reranker (BAAI/bge-reranker-v2-m3, ~2.2GB) baixados pelo
+      # HuggingFace Hub na primeira execução. Sem este volume, cada rebuild
+      # ou troca de container baixa tudo de novo (minutos, dependendo da rede).
+      - hf_cache:/root/.cache/huggingface
     depends_on:
       chromadb:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - app-network
@@ -34,6 +50,26 @@ services:
     networks:
       - app-network
 
+  # ── PostgreSQL (Banco Relacional — cursos, documentos, professores) ────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: univasf-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-univasf}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-univasf}
+      - POSTGRES_DB=${POSTGRES_DB:-univasf}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-univasf}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
   # ── Cloudflare Tunnel (Exposição Segura) ───────────────────────────────────
   tunnel:
     image: cloudflare/cloudflared:latest
@@ -49,6 +85,16 @@ services:
 
 volumes:
   chroma_data:
+    driver: local
+  postgres_data:
+    driver: local
+  data_raw:
+    driver: local
+  data_chunks:
+    driver: local
+  data_logs:
+    driver: local
+  hf_cache:
     driver: local
 
 networks:

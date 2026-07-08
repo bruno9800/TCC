@@ -1,11 +1,21 @@
 """
-Chat Service — Agente Leve com Pipeline RAG
+Chat Service — Adaptadores para o AgentOrchestrator (Fase 4)
 
-Implementa um agente leve que:
-1. Recebe a mensagem + histórico de conversa
-2. Usa o LLM para decidir se precisa buscar nos documentos ou não
-3. Se precisa: executa busca → rerank → monta contexto → gera resposta
-4. Se não precisa: responde diretamente (cumprimentos, follow-ups, etc.)
+run_chat/stream_chat são wrappers finos sobre src.agent.orchestrator.run(),
+que faz toda a orquestração (decisão via function calling nativo, execução
+de tools, síntese final). Isso resolve dois problemas que existiam aqui
+antes da Fase 4:
+
+  - D5: a decisão "buscar ou não" era um JSON parseado manualmente da
+    resposta do LLM — agora é function calling nativo, no orchestrator.
+  - D4: run_chat e stream_chat duplicavam quase toda a lógica — agora ambos
+    só traduzem os eventos do mesmo generator para seus formatos de saída.
+
+A sessão do banco é aberta e fechada aqui (não via Depends(get_db) no
+router) porque com StreamingResponse o generator só é consumido pelo
+Starlette depois que a função da rota já retornou — uma sessão injetada via
+Depends seria fechada antes do generator (que usa `db` para ProfessorTool)
+terminar de rodar.
 """
 
 from __future__ import annotations
@@ -15,99 +25,13 @@ import logging
 import urllib.parse
 from collections.abc import Generator
 
-from openai import OpenAI
-
-from src.config import LLM_MODEL, OPENAI_API_KEY
-from src.retrieval.hybrid_search import HybridSearchEngine
-from src.retrieval.reranker import rerank
-from src.generation.generator import build_context
-from src.chat.schemas import (
-    ChatMessage,
-    ChatResponse,
-    SourceInfo,
-    TokenUsage,
-)
+from src.agent import orchestrator
+from src.chat.schemas import ChatMessage, ChatResponse, SourceInfo, TokenUsage
+from src.config import LLM_MODEL
+from src.db.session import SessionLocal
 from src.logs.query_logger import log_query
-from src.retrieval.hyde import generate_hypothetical_document
-from src.indexing.vector_store import generate_embeddings
 
 logger = logging.getLogger(__name__)
-
-# ── Singletons ─────────────────────────────────────────────────────────────────
-
-_search_engine: HybridSearchEngine | None = None
-_openai_client: OpenAI | None = None
-
-
-def get_search_engine() -> HybridSearchEngine:
-    """Retorna instância singleton do motor de busca."""
-    global _search_engine
-    if _search_engine is None:
-        logger.info("Inicializando HybridSearchEngine...")
-        _search_engine = HybridSearchEngine()
-        logger.info(f"HybridSearchEngine carregado com {len(_search_engine.chunks)} chunks.")
-    return _search_engine
-
-
-def get_openai_client() -> OpenAI:
-    """Retorna instância singleton do cliente OpenAI."""
-    global _openai_client
-    if _openai_client is None:
-        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
-    return _openai_client
-
-
-# ── System Prompt ──────────────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = """\
-Você é o Assistente Acadêmico da UNIVASF (Universidade Federal do Vale do São Francisco).
-
-## Suas capacidades:
-- Você tem acesso a uma ferramenta de busca nos documentos normativos oficiais da UNIVASF \
-(estatutos, regimentos, resoluções).
-- Quando o usuário pergunta sobre normas, regras, prazos, direitos ou procedimentos \
-acadêmicos, você DEVE buscar nos documentos.
-
-## Como decidir se precisa buscar:
-- BUSCAR: perguntas sobre normas, regras, trancamento, matrícula, estágio, regulamentos, \
-prazos, direitos, resoluções, artigos, etc.
-- NÃO BUSCAR: 
-    - cumprimentos (oi, bom dia), agradecimentos.
-    - perguntas sobre você mesmo.
-    - perguntas sobre o histórico da conversa (ex: "o que eu perguntei antes?", "resuma o que falamos").
-    - esclarecimentos sobre algo que você já respondeu.
-
-## Formato de decisão:
-Quando receber uma mensagem, responda APENAS com um JSON:
-{"needs_search": true, "search_query": "consulta otimizada para busca semântica"}
-ou
-{"needs_search": false, "direct_response": "sua resposta direta aqui"}
-
-IMPORTANTE: Responda SOMENTE o JSON, sem texto adicional.\
-"""
-
-ANSWER_PROMPT = """\
-Você é o assistente normativo da UNIVASF. Responda dúvidas \
-sobre normas, regulamentos, estatutos e resoluções da universidade.
-
-## Regras:
-
-1. Responda APENAS com base no contexto fornecido. Se não encontrar, diga claramente.
-2. NUNCA invente normas ou artigos.
-3. Cite SEMPRE a fonte: "Segundo o Art. X da [Norma]..." ou "(Art. X, [Norma])".
-4. Se múltiplas normas tratam do assunto, cite todas.
-5. Use linguagem clara e acessível.
-
-## Formato:
-
-- Seja DIRETO e CONCISO. Máximo 2-3 parágrafos curtos.
-- Vá direto ao ponto: o estudante quer a resposta rápida, não um tratado.
-- Evite repetições e rodeios. Não repita a pergunta.
-- Cite os artigos inline, NÃO liste fontes separadamente ao final.\
-"""
-
-
-# ── Agente ─────────────────────────────────────────────────────────────────────
 
 
 def _build_history_messages(history: list[ChatMessage]) -> list[dict]:
@@ -115,201 +39,138 @@ def _build_history_messages(history: list[ChatMessage]) -> list[dict]:
     return [{"role": msg.role, "content": msg.content} for msg in history]
 
 
+def _build_source_infos(raw_sources: list[dict]) -> list[SourceInfo]:
+    """Traduz os dicts de `sources` retornados pelas tools para SourceInfo."""
+    infos: list[SourceInfo] = []
+    for src in raw_sources:
+        if src.get("origin") == "professor":
+            if src.get("nde_role"):
+                nde_tag = f" (NDE — {src['nde_role']})"
+            elif src.get("is_nde"):
+                nde_tag = " (NDE)"
+            else:
+                nde_tag = ""
+            infos.append(
+                SourceInfo(
+                    origin="professor",
+                    source=src.get("name", ""),
+                    category=f"Professor{nde_tag}",
+                    snippet=f"{src.get('email', '')} — {src.get('area') or 'área não informada'}",
+                )
+            )
+        elif src.get("origin") == "discipline":
+            period = src.get("period")
+            period_label = f"{period}º período" if period else "optativa"
+            infos.append(
+                SourceInfo(
+                    origin="discipline",
+                    source=f"{src.get('name', '')} ({src.get('code', '')})",
+                    category=f"Matriz Curricular — {period_label}",
+                    snippet=(
+                        f"Carga horária: {src.get('workload', '')}h"
+                        + (f" | {src['prerequisites_text']}" if src.get("prerequisites_text") else "")
+                    ),
+                )
+            )
+        elif src.get("origin") == "calendar":
+            date_range = src.get("start_date", "")
+            if src.get("end_date") and src["end_date"] != src.get("start_date"):
+                date_range += f" a {src['end_date']}"
+            campus = f" ({src['campus']})" if src.get("campus") else ""
+            infos.append(
+                SourceInfo(
+                    origin="calendar",
+                    source=src.get("title", ""),
+                    category=f"Calendário Acadêmico — {src.get('category') or 'evento'}{campus}",
+                    snippet=(
+                        date_range
+                        + (f" | {src['legal_reference']}" if src.get("legal_reference") else "")
+                    ),
+                )
+            )
+        else:
+            source_name = src.get("source", "")
+            infos.append(
+                SourceInfo(
+                    origin="rag",
+                    source=source_name,
+                    category=src.get("category", ""),
+                    article_id=src.get("article_id", ""),
+                    hierarchy=src.get("hierarchy", ""),
+                    score=src.get("score", 0.0),
+                    snippet=src.get("snippet", ""),
+                    download_url=(
+                        f"/documents/download?source={urllib.parse.quote(source_name)}"
+                        if source_name
+                        else ""
+                    ),
+                )
+            )
+    return infos
+
+
+def _log(message: str, source_infos: list[SourceInfo], used_tools: list[str], tokens: dict,
+          top_k: int, filter_revoked: bool, model: str) -> None:
+    log_query(
+        question=message,
+        search_query="",
+        used_search=bool(used_tools),
+        sources=[{"source": s.source, "score": s.score, "article_id": s.article_id} for s in source_infos],
+        top_k=top_k,
+        filter_revoked=filter_revoked,
+        tokens_prompt=tokens.get("prompt", 0),
+        tokens_completion=tokens.get("completion", 0),
+        model=model,
+    )
+
+
 def run_chat(
     message: str,
     history: list[ChatMessage],
     top_k: int = 5,
     filter_revoked: bool = True,
+    course_id: int | None = None,
     model: str = LLM_MODEL,
 ) -> ChatResponse:
-    """
-    Executa o agente de chat.
-
-    1. Envia mensagem + histórico para o LLM decidir se precisa buscar
-    2. Se precisa: executa RAG pipeline e gera resposta com contexto
-    3. Se não: retorna resposta direta do LLM
-
-    Args:
-        message: Pergunta do usuário.
-        history: Histórico de mensagens anteriores.
-        top_k: Documentos finais pós-reranking.
-        filter_revoked: Se True, exclui documentos revogados.
-        model: Modelo LLM a usar.
-
-    Returns:
-        ChatResponse com a resposta, fontes e métricas.
-    """
-    client = get_openai_client()
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-
-    # ── Passo 1: LLM decide se precisa buscar ──────────────────────────────
-    decision_messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        *_build_history_messages(history),
-        {"role": "user", "content": message},
-    ]
-
-    decision_response = client.chat.completions.create(
-        model=model,
-        messages=decision_messages,
-        temperature=0.0,
-        max_tokens=256,
-    )
-
-    decision_text = decision_response.choices[0].message.content or ""
-    usage = decision_response.usage
-    if usage:
-        total_prompt_tokens += usage.prompt_tokens
-        total_completion_tokens += usage.completion_tokens
-
-    logger.info(f"Decisão do agente: {decision_text[:200]}")
-
-    # ── Parse da decisão ───────────────────────────────────────────────────
-    needs_search = True
-    search_query = message
-    direct_response = None
-
+    """Executa o agente e retorna a resposta completa (não-streaming)."""
+    db = SessionLocal()
     try:
-        # Tenta extrair JSON da resposta (pode ter markdown wrapping)
-        clean = decision_text.strip()
-        if clean.startswith("```"):
-            clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        decision = json.loads(clean)
-        needs_search = decision.get("needs_search", True)
-        if needs_search:
-            search_query = decision.get("search_query", message)
-        else:
-            direct_response = decision.get("direct_response", "")
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"Falha ao parsear decisão do agente: {e}. Buscando por segurança.")
-        needs_search = True
-        search_query = message
+        answer_parts: list[str] = []
+        raw_sources: list[dict] = []
+        used_tools: list[str] = []
+        tokens = {"prompt": 0, "completion": 0}
 
-    # ── Passo 2A: Resposta direta (sem busca) ──────────────────────────────
-    if not needs_search and direct_response:
-        logger.info("Agente respondeu diretamente (sem busca).")
-        log_query(
-            question=message,
-            search_query="",
-            used_search=False,
-            sources=[],
+        for event in orchestrator.run(
+            message=message,
+            history=_build_history_messages(history),
+            db=db,
             top_k=top_k,
             filter_revoked=filter_revoked,
-            tokens_prompt=total_prompt_tokens,
-            tokens_completion=total_completion_tokens,
+            course_id=course_id,
             model=model,
-        )
+        ):
+            if event["type"] == "token":
+                answer_parts.append(event["text"])
+            elif event["type"] == "done":
+                raw_sources = event["sources"]
+                used_tools = event["used_tools"]
+                tokens = event["tokens"]
+            elif event["type"] == "error":
+                raise RuntimeError(event["text"])
+
+        source_infos = _build_source_infos(raw_sources)
+        _log(message, source_infos, used_tools, tokens, top_k, filter_revoked, model)
+
         return ChatResponse(
-            answer=direct_response,
-            sources=[],
+            answer="".join(answer_parts),
+            sources=source_infos,
             model=model,
-            tokens=TokenUsage(prompt=total_prompt_tokens, completion=total_completion_tokens),
-            used_search=False,
+            tokens=TokenUsage(**tokens),
+            used_search=bool(used_tools),
+            used_tools=used_tools,
         )
-
-    # ── Passo 2B: Pipeline RAG (com busca) ─────────────────────────────────
-    logger.info(f"Agente decidiu buscar: '{search_query}'")
-
-    engine = get_search_engine()
-
-    # HyDE — gera documento hipotético e computa seu embedding para o dense search
-    hypothetical_doc = generate_hypothetical_document(search_query)
-    hyde_embedding = generate_embeddings([hypothetical_doc])[0]
-    logger.info("HyDE: embedding do documento hipotético gerado.")
-
-    # Busca híbrida: dense com embedding HyDE + BM25 com query original
-    candidates = engine.search_hybrid(
-        query=search_query,
-        filter_revoked=filter_revoked,
-        hyde_embedding=hyde_embedding,
-    )
-
-    # Reranking
-    top_results = rerank(search_query, candidates, top_k=top_k)
-
-    if not top_results:
-        return ChatResponse(
-            answer="Não encontrei informações relevantes nos documentos normativos da UNIVASF "
-                   "para essa pergunta. Poderia reformular ou ser mais específico?",
-            sources=[],
-            model=model,
-            tokens=TokenUsage(prompt=total_prompt_tokens, completion=total_completion_tokens),
-            used_search=True,
-        )
-
-    # Monta contexto e gera resposta final
-    context = build_context(top_results)
-
-    answer_messages = [
-        {"role": "system", "content": ANSWER_PROMPT},
-        *_build_history_messages(history),
-        {
-            "role": "user",
-            "content": (
-                f"Com base nos documentos normativos fornecidos abaixo, "
-                f"responda à seguinte pergunta:\n\n"
-                f"**Pergunta:** {message}\n\n"
-                f"**Contexto (Documentos Normativos):**\n{context}\n\n"
-                f"Lembre-se: responda apenas com base nos documentos acima e cite as fontes."
-            ),
-        },
-    ]
-
-    answer_response = client.chat.completions.create(
-        model=model,
-        messages=answer_messages,
-        temperature=0.1,
-        max_tokens=1024,
-    )
-
-    answer = answer_response.choices[0].message.content or ""
-    usage = answer_response.usage
-    if usage:
-        total_prompt_tokens += usage.prompt_tokens
-        total_completion_tokens += usage.completion_tokens
-
-    # Monta fontes
-    sources: list[SourceInfo] = []
-    seen: set[str] = set()
-    for result in top_results:
-        source_name = result.metadata.get("source", "")
-        if source_name and source_name not in seen:
-            seen.add(source_name)
-            sources.append(
-                SourceInfo(
-                    source=source_name,
-                    category=result.metadata.get("category", ""),
-                    article_id=result.metadata.get("article_id", ""),
-                    hierarchy=result.metadata.get("hierarchy", ""),
-                    score=result.score,
-                    snippet=result.content[:300],
-                    download_url=f"/documents/download?source={urllib.parse.quote(source_name)}",
-                )
-            )
-
-    log_query(
-        question=message,
-        search_query=search_query,
-        used_search=True,
-        sources=[
-            {"source": s.source, "score": s.score, "article_id": s.article_id}
-            for s in sources
-        ],
-        top_k=top_k,
-        filter_revoked=filter_revoked,
-        tokens_prompt=total_prompt_tokens,
-        tokens_completion=total_completion_tokens,
-        model=model,
-    )
-
-    return ChatResponse(
-        answer=answer,
-        sources=sources,
-        model=model,
-        tokens=TokenUsage(prompt=total_prompt_tokens, completion=total_completion_tokens),
-        used_search=True,
-    )
+    finally:
+        db.close()
 
 
 def stream_chat(
@@ -317,6 +178,7 @@ def stream_chat(
     history: list[ChatMessage],
     top_k: int = 5,
     filter_revoked: bool = True,
+    course_id: int | None = None,
     model: str = LLM_MODEL,
 ) -> Generator[str, None, None]:
     """
@@ -325,138 +187,41 @@ def stream_chat(
     Emite eventos SSE:
       - data: {"type": "status", "text": "..."}   — etapas do pipeline
       - data: {"type": "token",  "text": "..."}   — tokens da resposta final
-      - data: {"type": "done",   "sources": [...]} — finalização com fontes
+      - data: {"type": "done",   "sources": [...], "used_search": ..., "used_tools": [...]}
       - data: {"type": "error",  "text": "..."}   — erro
     """
-    client = get_openai_client()
+    db = SessionLocal()
 
     def emit(obj: dict) -> str:
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
     try:
-        # ── Passo 1: Decisão ───────────────────────────────────────────────
-        yield emit({"type": "status", "text": "Analisando pergunta..."})
-
-        decision_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *_build_history_messages(history),
-            {"role": "user", "content": message},
-        ]
-        decision_response = client.chat.completions.create(
-            model=model, messages=decision_messages, temperature=0.0, max_tokens=256,
-        )
-        decision_text = decision_response.choices[0].message.content or ""
-
-        needs_search = True
-        search_query = message
-        direct_response = None
-
-        try:
-            clean = decision_text.strip()
-            if clean.startswith("```"):
-                clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            decision = json.loads(clean)
-            needs_search = decision.get("needs_search", True)
-            if needs_search:
-                search_query = decision.get("search_query", message)
-            else:
-                direct_response = decision.get("direct_response", "")
-        except (json.JSONDecodeError, KeyError):
-            needs_search = True
-
-        # ── Resposta direta (sem busca) ────────────────────────────────────
-        if not needs_search and direct_response:
-            yield emit({"type": "token", "text": direct_response})
-            yield emit({"type": "done", "sources": [], "used_search": False})
-            log_query(
-                question=message, search_query="", used_search=False, sources=[],
-                top_k=top_k, filter_revoked=filter_revoked,
-                tokens_prompt=0, tokens_completion=0, model=model,
-            )
-            return
-
-        # ── Passo 2: RAG pipeline ──────────────────────────────────────────
-        yield emit({"type": "status", "text": "Buscando nos documentos normativos..."})
-
-        hypothetical_doc = generate_hypothetical_document(search_query)
-        hyde_embedding = generate_embeddings([hypothetical_doc])[0]
-
-        engine = get_search_engine()
-        candidates = engine.search_hybrid(
-            query=search_query, filter_revoked=filter_revoked, hyde_embedding=hyde_embedding,
-        )
-
-        yield emit({"type": "status", "text": "Selecionando trechos mais relevantes..."})
-        top_results = rerank(search_query, candidates, top_k=top_k)
-
-        if not top_results:
-            msg = (
-                "Não encontrei informações relevantes nos documentos normativos da UNIVASF "
-                "para essa pergunta. Poderia reformular ou ser mais específico?"
-            )
-            yield emit({"type": "token", "text": msg})
-            yield emit({"type": "done", "sources": [], "used_search": True})
-            return
-
-        context = build_context(top_results)
-        answer_messages = [
-            {"role": "system", "content": ANSWER_PROMPT},
-            *_build_history_messages(history),
-            {
-                "role": "user",
-                "content": (
-                    f"Com base nos documentos normativos fornecidos abaixo, "
-                    f"responda à seguinte pergunta:\n\n"
-                    f"**Pergunta:** {message}\n\n"
-                    f"**Contexto (Documentos Normativos):**\n{context}\n\n"
-                    f"Lembre-se: responda apenas com base nos documentos acima e cite as fontes."
-                ),
-            },
-        ]
-
-        # ── Passo 3: Streaming da resposta final ───────────────────────────
-        yield emit({"type": "status", "text": "Gerando resposta..."})
-
-        full_answer = ""
-        with client.chat.completions.create(
+        for event in orchestrator.run(
+            message=message,
+            history=_build_history_messages(history),
+            db=db,
+            top_k=top_k,
+            filter_revoked=filter_revoked,
+            course_id=course_id,
             model=model,
-            messages=answer_messages,
-            temperature=0.1,
-            max_tokens=1024,
-            stream=True,
-        ) as stream:
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content if chunk.choices else None
-                if delta:
-                    full_answer += delta
-                    yield emit({"type": "token", "text": delta})
-
-        # ── Monta fontes e finaliza ────────────────────────────────────────
-        sources_out: list[dict] = []
-        seen: set[str] = set()
-        for result in top_results:
-            source_name = result.metadata.get("source", "")
-            if source_name and source_name not in seen:
-                seen.add(source_name)
-                sources_out.append({
-                    "source": source_name,
-                    "category": result.metadata.get("category", ""),
-                    "article_id": result.metadata.get("article_id", ""),
-                    "hierarchy": result.metadata.get("hierarchy", ""),
-                    "score": result.score,
-                    "snippet": result.content[:300],
-                    "download_url": f"/documents/download?source={urllib.parse.quote(source_name)}",
-                })
-
-        yield emit({"type": "done", "sources": sources_out, "used_search": True})
-
-        log_query(
-            question=message, search_query=search_query, used_search=True,
-            sources=[{"source": s["source"], "score": s["score"], "article_id": s["article_id"]} for s in sources_out],
-            top_k=top_k, filter_revoked=filter_revoked,
-            tokens_prompt=0, tokens_completion=0, model=model,
-        )
-
-    except Exception as e:
-        logger.error(f"Erro no stream_chat: {e}", exc_info=True)
-        yield emit({"type": "error", "text": str(e)})
+        ):
+            if event["type"] == "status":
+                yield emit({"type": "status", "text": event["text"]})
+            elif event["type"] == "token":
+                yield emit({"type": "token", "text": event["text"]})
+            elif event["type"] == "error":
+                yield emit({"type": "error", "text": event["text"]})
+            elif event["type"] == "done":
+                source_infos = _build_source_infos(event["sources"])
+                used_tools = event["used_tools"]
+                yield emit(
+                    {
+                        "type": "done",
+                        "sources": [s.model_dump() for s in source_infos],
+                        "used_search": bool(used_tools),
+                        "used_tools": used_tools,
+                    }
+                )
+                _log(message, source_infos, used_tools, event["tokens"], top_k, filter_revoked, model)
+    finally:
+        db.close()

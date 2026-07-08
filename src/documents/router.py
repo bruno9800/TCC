@@ -11,53 +11,32 @@ from __future__ import annotations
 
 import logging
 import urllib.parse
-from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
-from src.config import DOCUMENTS_DIR
+from src.config import PROJECT_ROOT
+from src.db.models import Document
+from src.db.session import get_db
 from src.indexing.vector_store import generate_embeddings, get_or_create_collection
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# ── Índice de documentos ───────────────────────────────────────────────────────
-# Mapa: stem normalizado → Path absoluto do PDF
-# Construído uma vez ao importar — tolerante a variações de case/espaço.
 
-def _build_index(root: Path) -> dict[str, Path]:
-    index: dict[str, Path] = {}
-    for pdf in root.rglob("*.pdf"):
-        key = pdf.stem.strip().lower()
-        index[key] = pdf
-    logger.info(f"Índice de documentos: {len(index)} PDFs encontrados em '{root}'")
-    return index
-
-
-_DOC_INDEX: dict[str, Path] = _build_index(DOCUMENTS_DIR)
-
-
-def resolve_pdf(source: str) -> Path | None:
+def resolve_document(source: str, db: Session) -> Document | None:
     """
-    Resolve o nome do documento (campo `source` do SourceInfo) para o Path do PDF.
-
-    Tenta correspondência exata (normalizada) primeiro. Se não encontrar,
-    tenta correspondência parcial (source contido no stem do arquivo).
+    Resolve o nome do documento (campo `source` do SourceInfo) para o registro
+    no banco. `source` é o mesmo valor usado como `metadata.source` nos
+    chunks — sempre igual a `Document.title` (nome do arquivo sem extensão),
+    então a correspondência é exata (case-insensitive), sem heurística de
+    filesystem: `Document.storage_path` já cobre tanto os documentos legados
+    (`regimentos_estatutos_resolucoes/`) quanto os enviados via /admin
+    (`data/raw/`).
     """
-    key = source.strip().lower()
-
-    # Correspondência exata
-    if key in _DOC_INDEX:
-        return _DOC_INDEX[key]
-
-    # Correspondência parcial — útil se o source foi truncado ou tem sufixo extra
-    for stem, path in _DOC_INDEX.items():
-        if key in stem or stem in key:
-            return path
-
-    return None
+    return db.query(Document).filter(Document.title.ilike(source.strip())).first()
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -72,7 +51,7 @@ def resolve_pdf(source: str) -> Path | None:
     ),
     response_class=FileResponse,
 )
-async def download_document(source: str) -> FileResponse:
+async def download_document(source: str, db: Session = Depends(get_db)) -> FileResponse:
     """
     Faz download do PDF original referenciado em uma resposta do chat.
 
@@ -81,13 +60,20 @@ async def download_document(source: str) -> FileResponse:
                 Exemplo: "Resolução 08_2015 - Normas_gerais_Graduação"
     """
     decoded = urllib.parse.unquote(source)
-    pdf_path = resolve_pdf(decoded)
+    document = resolve_document(decoded, db)
 
-    if pdf_path is None:
+    if document is None or not document.storage_path:
         raise HTTPException(
             status_code=404,
             detail=f"Documento '{decoded}' não encontrado. "
                    f"Verifique se o campo `source` foi copiado corretamente da resposta do /chat/.",
+        )
+
+    pdf_path = PROJECT_ROOT / document.storage_path
+    if not pdf_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Arquivo de '{decoded}' está registrado mas não foi encontrado em disco.",
         )
 
     return FileResponse(
@@ -102,23 +88,30 @@ async def download_document(source: str) -> FileResponse:
     summary="Lista todos os documentos disponíveis para download",
     response_model=list[dict],
 )
-async def list_documents() -> list[dict]:
+async def list_documents(db: Session = Depends(get_db)) -> list[dict]:
     """
-    Retorna a lista de todos os PDFs com nome, categoria e download_url.
-    Use quando não há query — tela inicial antes do usuário digitar.
+    Retorna a lista de todos os documentos vigentes/indexados, com nome,
+    categoria e download_url. Use quando não há query — tela inicial antes
+    do usuário digitar.
+
+    Consulta o banco (Document) em vez do filesystem — cobre tanto os 48
+    documentos legados quanto qualquer documento enviado via /admin.
     """
-    docs = []
-    for pdf in sorted(DOCUMENTS_DIR.rglob("*.pdf")):
-        relative = pdf.relative_to(DOCUMENTS_DIR)
-        parts = relative.parts
-        category = parts[0] if len(parts) > 1 else "raiz"
-        docs.append({
-            "source": pdf.stem,
-            "filename": pdf.name,
-            "category": category,
-            "download_url": f"/documents/download?source={urllib.parse.quote(pdf.stem)}",
-        })
-    return docs
+    documents = (
+        db.query(Document)
+        .filter(Document.status == "indexed")
+        .order_by(Document.title)
+        .all()
+    )
+    return [
+        {
+            "source": doc.title,
+            "filename": doc.filename,
+            "category": doc.category or "",
+            "download_url": f"/documents/download?source={urllib.parse.quote(doc.title)}",
+        }
+        for doc in documents
+    ]
 
 
 @router.get(
