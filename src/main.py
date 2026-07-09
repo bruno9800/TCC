@@ -19,6 +19,7 @@ from src.logs.router import router as logs_router
 from src.professors.router import router as professors_router
 from src.retrieval.hybrid_search import get_search_engine
 from src.retrieval.reranker import warm_up as warm_up_reranker
+from src.transport.router import router as transport_router
 from src.auth import get_api_key
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,12 @@ app.include_router(
 )
 app.include_router(
     courses_router, prefix="/courses", tags=["Courses"], dependencies=[Depends(get_api_key)]
+)
+app.include_router(
+    transport_router,
+    prefix="/transport-routes",
+    tags=["Transport"],
+    dependencies=[Depends(get_api_key)],
 )
 # Autenticação própria (JWT de AdminUser), deliberadamente separada da x-api-key pública.
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])

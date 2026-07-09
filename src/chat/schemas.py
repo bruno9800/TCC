@@ -43,7 +43,8 @@ class SourceInfo(BaseModel):
         default="rag",
         description=(
             "Origem da fonte: 'rag' (documento normativo), 'professor' (corpo docente), "
-            "'discipline' (matriz curricular) ou 'calendar' (calendário acadêmico)."
+            "'discipline' (matriz curricular), 'calendar' (calendário acadêmico) ou "
+            "'transport' (itinerário do transporte estudantil)."
         ),
     )
     source: str

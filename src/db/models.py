@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -230,6 +230,83 @@ class AcademicEvent(Base):
     legal_reference: Mapped[str | None] = mapped_column(String(300))
     campus: Mapped[str | None] = mapped_column(String(50))
     academic_period: Mapped[str | None] = mapped_column(String(10))  # ex: "2026.1"
+    # 'manual' (CRUD do admin) | 'import' (importação estruturada) | 'seed' (scripts).
+    # A reimportação do calendário substitui apenas eventos não-manuais — edições
+    # feitas à mão pelo admin sobrevivem a um novo upload do PDF.
+    source: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
+
+    course: Mapped["Course | None"] = relationship()
+
+
+# ── Transporte Estudantil ────────────────────────────────────────────────────────
+
+
+class TransportRoute(Base):
+    """
+    Rota do transporte estudantil (PROAE) — dado estruturado, consultado via
+    Tool (SQL), não via RAG. Mesma lógica de AcademicEvent: horários exatos de
+    ônibus não devem depender de recall de embedding sobre o PDF do itinerário.
+    """
+
+    __tablename__ = "transport_routes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    semester: Mapped[str] = mapped_column(String(10))  # ex: "2026.1"
+    shift: Mapped[str] = mapped_column(String(20))  # manhã | tarde | noite
+    bus_label: Mapped[str] = mapped_column(String(50))  # ex: 'A', 'B'
+    route_description: Mapped[str] = mapped_column(String(300))  # ex: "JUAZEIRO -> CCA -> COHAB"
+    section_title: Mapped[str | None] = mapped_column(String(300))  # cabeçalho do PDF
+    effective_date: Mapped[date | None]  # "A PARTIR DE 02/03/2026"
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    stops: Mapped[list["TransportRouteStop"]] = relationship(
+        back_populates="route", cascade="all, delete-orphan", order_by="TransportRouteStop.seq"
+    )
+
+
+class TransportRouteStop(Base):
+    """Parada de uma rota, na ordem do itinerário (seq)."""
+
+    __tablename__ = "transport_route_stops"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_id: Mapped[int] = mapped_column(ForeignKey("transport_routes.id"))
+    seq: Mapped[int]
+    time: Mapped[str | None] = mapped_column(String(10))  # "06:10"; None p/ sub-cabeçalhos
+    location: Mapped[str] = mapped_column(String(300))
+
+    route: Mapped["TransportRoute"] = relationship(back_populates="stops")
+
+
+# ── Importação Estruturada ───────────────────────────────────────────────────────
+
+
+class ImportJob(Base):
+    """
+    Ciclo de vida de uma importação estruturada via LLM (PDF → dados relacionais),
+    em duas etapas com validação humana: o upload gera um preview ('preview',
+    payload extraído + diff contra o banco); o admin então confirma ('applied')
+    ou descarta ('discarded'). Nada é escrito nas tabelas de destino antes do apply.
+    """
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    import_type: Mapped[str] = mapped_column(String(20))  # calendar | curriculum | transport
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("courses.id"), nullable=True)
+    semester: Mapped[str | None] = mapped_column(String(10))  # transporte: ex. "2026.1"
+    filename: Mapped[str] = mapped_column(String(300))
+    storage_path: Mapped[str | None] = mapped_column(String(500))
+
+    status: Mapped[str] = mapped_column(String(20), default="preview")  # preview|applied|discarded|failed
+    payload: Mapped[dict | None] = mapped_column(JSON)  # itens extraídos, normalizados
+    stats: Mapped[dict | None] = mapped_column(JSON)  # diff/contagens para o preview
+    warnings: Mapped[list | None] = mapped_column(JSON)
+    error_message: Mapped[str | None]
+
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    applied_at: Mapped[datetime | None]
 
     course: Mapped["Course | None"] = relationship()
 

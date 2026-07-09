@@ -173,6 +173,7 @@ class AcademicEventOut(BaseModel):
     legal_reference: str | None
     campus: str | None
     academic_period: str | None
+    source: str
 
 
 class AcademicEventCreateRequest(BaseModel):
@@ -197,3 +198,53 @@ class AcademicEventUpdateRequest(BaseModel):
     legal_reference: str | None = None
     campus: str | None = None
     academic_period: str | None = None
+
+
+# ── Transporte Estudantil ───────────────────────────────────────────────────
+
+
+class TransportRouteStopOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    seq: int
+    time: str | None  # "HH:MM"; null para sub-cabeçalhos (ex: "SEGUNDA VIAGEM...")
+    location: str
+
+
+class TransportRouteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    semester: str
+    shift: str  # "manhã" | "tarde" | "noite"
+    bus_label: str
+    route_description: str
+    effective_date: date | None
+    stops: list[TransportRouteStopOut] = Field(default_factory=list)
+
+
+# ── Importação Estruturada ──────────────────────────────────────────────────
+
+
+class ImportJobSummaryOut(BaseModel):
+    """Versão leve para listagem — sem o payload de itens extraídos."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    import_type: str
+    course_id: int | None
+    semester: str | None
+    filename: str
+    status: str
+    stats: dict | None
+    warnings: list | None
+    error_message: str | None
+    created_at: datetime
+    applied_at: datetime | None
+
+
+class ImportJobOut(ImportJobSummaryOut):
+    """Detalhe completo — inclui os itens extraídos para revisão no preview."""
+
+    payload: dict | None

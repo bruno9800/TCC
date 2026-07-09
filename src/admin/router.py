@@ -24,6 +24,8 @@ from src.admin.schemas import (
     DisciplineOut,
     DocumentOut,
     DocumentUpdateRequest,
+    ImportJobOut,
+    ImportJobSummaryOut,
     LoginRequest,
     ProfessorCreateRequest,
     ProfessorDisciplineAssignRequest,
@@ -36,6 +38,7 @@ from src.courses import service as course_service
 from src.db.models import AdminUser
 from src.db.session import get_db
 from src.documents import service as document_service
+from src.imports import service as import_service
 from src.professors import service as professor_service
 
 logger = logging.getLogger(__name__)
@@ -365,6 +368,100 @@ async def delete_event(
         calendar_service.delete_event(db, event_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+# ── Importação Estruturada (PDF → dados relacionais via LLM) ──────────────
+
+
+@router.post(
+    "/imports",
+    response_model=ImportJobOut,
+    status_code=status.HTTP_201_CREATED,
+    summary=(
+        "Upload de PDF para importação estruturada (calendar | curriculum | transport). "
+        "Extrai via LLM e gera um PREVIEW — nada é gravado até o /apply."
+    ),
+)
+async def create_import(
+    file: UploadFile = File(...),
+    import_type: str = Form(...),
+    course_id: int | None = Form(None),
+    semester: str | None = Form(None),
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ImportJobOut:
+    file_bytes = await file.read()
+    try:
+        job = import_service.create_import(
+            db,
+            import_type=import_type,
+            file_bytes=file_bytes,
+            filename=file.filename or "documento.pdf",
+            course_id=course_id,
+            semester=semester,
+            admin_id=admin.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return job
+
+
+@router.get("/imports", response_model=list[ImportJobSummaryOut], summary="Lista importações")
+async def list_imports(
+    import_type: str | None = None,
+    status_filter: str | None = None,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> list[ImportJobSummaryOut]:
+    return import_service.list_imports(db, import_type=import_type, status=status_filter)
+
+
+@router.get(
+    "/imports/{job_id}",
+    response_model=ImportJobOut,
+    summary="Detalhe de uma importação (inclui itens extraídos para revisão)",
+)
+async def get_import(
+    job_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ImportJobOut:
+    job = import_service.get_import(db, job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Importação não encontrada")
+    return job
+
+
+@router.post(
+    "/imports/{job_id}/apply",
+    response_model=ImportJobOut,
+    summary="Aplica o preview no banco (replace/upsert idempotente, transação única)",
+)
+async def apply_import(
+    job_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ImportJobOut:
+    try:
+        return import_service.apply_import(db, job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete(
+    "/imports/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Descarta um preview (não afeta importações já aplicadas)",
+)
+async def discard_import(
+    job_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        import_service.discard_import(db, job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # ── Cursos ───────────────────────────────────────────────────────────────
