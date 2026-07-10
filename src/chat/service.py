@@ -88,6 +88,19 @@ def _build_source_infos(raw_sources: list[dict]) -> list[SourceInfo]:
                     ),
                 )
             )
+        elif src.get("origin") == "transport":
+            infos.append(
+                SourceInfo(
+                    origin="transport",
+                    source=f"Ônibus {src.get('bus_label', '')} — {src.get('route_description', '')}",
+                    category=f"Transporte Estudantil — {src.get('shift', '')} ({src.get('semester', '')})",
+                    snippet=(
+                        f"Vigente a partir de {src['effective_date']}"
+                        if src.get("effective_date")
+                        else ""
+                    ),
+                )
+            )
         else:
             source_name = src.get("source", "")
             infos.append(

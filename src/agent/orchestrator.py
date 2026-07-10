@@ -28,7 +28,7 @@ from collections.abc import Generator
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from src.agent.tools import calendar_tool, discipline_tool, professor_tool, rag_tool
+from src.agent.tools import calendar_tool, discipline_tool, professor_tool, rag_tool, transport_tool
 from src.config import LLM_MODEL, OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
@@ -38,14 +38,22 @@ TOOLS = {
     professor_tool.NAME: professor_tool,
     discipline_tool.NAME: discipline_tool,
     calendar_tool.NAME: calendar_tool,
+    transport_tool.NAME: transport_tool,
 }
-TOOL_SCHEMAS = [rag_tool.SCHEMA, professor_tool.SCHEMA, discipline_tool.SCHEMA, calendar_tool.SCHEMA]
+TOOL_SCHEMAS = [
+    rag_tool.SCHEMA,
+    professor_tool.SCHEMA,
+    discipline_tool.SCHEMA,
+    calendar_tool.SCHEMA,
+    transport_tool.SCHEMA,
+]
 
 STATUS_MESSAGES = {
     rag_tool.NAME: "Buscando nos documentos normativos...",
     professor_tool.NAME: "Consultando o corpo docente...",
     discipline_tool.NAME: "Consultando a matriz curricular...",
     calendar_tool.NAME: "Consultando o calendário acadêmico...",
+    transport_tool.NAME: "Consultando o itinerário do transporte...",
 }
 
 SYSTEM_PROMPT = """\
@@ -70,6 +78,10 @@ início/fim de período letivo, matrícula, trancamento, feriados, colação de 
 exames). Use SEMPRE que a pergunta envolver "quando" ou prazos específicos de \
 eventos acadêmicos — não tente responder isso só com search_normative_documents, \
 pois o texto normativo não garante a data exata de cada evento.
+- search_transport_routes: consulta o itinerário oficial do transporte estudantil \
+(ônibus da PROAE entre os campi Juazeiro, Petrolina e Ciências Agrárias/CCA — \
+linhas, horários e pontos de parada por turno). Use SEMPRE que a pergunta envolver \
+ônibus, transporte intercampi ou horários de itinerário.
 
 Você pode usar mais de uma ferramenta na mesma pergunta quando fizer sentido (ex: uma \
 pergunta que envolve tanto uma norma quanto quem a aplica).

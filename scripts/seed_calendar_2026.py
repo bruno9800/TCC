@@ -409,6 +409,7 @@ def main():
                 legal_reference=legal_ref,
                 campus=campus,
                 academic_period=period,
+                source="seed",
             )
             session.add(event)
             created += 1
