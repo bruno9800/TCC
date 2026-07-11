@@ -10,7 +10,9 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import unicodedata
 import urllib.parse
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -24,6 +26,27 @@ from src.indexing.vector_store import generate_embeddings, get_or_create_collect
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def find_pdf_on_disk(storage_path: str) -> Path | None:
+    """
+    Resolve o arquivo em disco tolerando divergência de normalização Unicode
+    no nome (NFC vs NFD).
+
+    Os registros legados foram backfilled no macOS, que apresenta nomes de
+    arquivo em NFD (decomposto: "a" + acento combinante); o git versiona os
+    mesmos nomes em NFC (precomposto: "á" único) e o Linux é byte-exato — então
+    no container Linux o `storage_path` NFD do banco não bate com o arquivo NFC
+    em disco (checkout do git). No macOS isso passava despercebido porque o
+    filesystem faz lookup insensível à forma. Tenta o caminho literal primeiro
+    (uploads via admin batem exato), depois NFC e NFD.
+    """
+    for form in (None, "NFC", "NFD"):
+        normalized = storage_path if form is None else unicodedata.normalize(form, storage_path)
+        candidate = PROJECT_ROOT / normalized
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def resolve_document(source: str, db: Session) -> Document | None:
@@ -69,8 +92,8 @@ async def download_document(source: str, db: Session = Depends(get_db)) -> FileR
                    f"Verifique se o campo `source` foi copiado corretamente da resposta do /chat/.",
         )
 
-    pdf_path = PROJECT_ROOT / document.storage_path
-    if not pdf_path.exists():
+    pdf_path = find_pdf_on_disk(document.storage_path)
+    if pdf_path is None:
         raise HTTPException(
             status_code=404,
             detail=f"Arquivo de '{decoded}' está registrado mas não foi encontrado em disco.",
